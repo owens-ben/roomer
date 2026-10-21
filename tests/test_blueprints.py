@@ -9,6 +9,7 @@ against state changes rather than just parsed.
 from __future__ import annotations
 
 import asyncio
+import inspect
 from datetime import timedelta
 from pathlib import Path
 
@@ -50,14 +51,24 @@ MINIMAL_INPUTS = {
 
 
 def _substitute(name: str, inputs: dict) -> dict:
-    blueprint = Blueprint(
-        load_yaml_dict(str(BLUEPRINT_DIR / name)),
-        expected_domain=AUTOMATION_DOMAIN,
-        schema=schemas.BLUEPRINT_SCHEMA,
-    )
+    kwargs = {"expected_domain": AUTOMATION_DOMAIN}
+    # Newer Home Assistant takes the schema explicitly; older versions
+    # (installed on Python 3.11) always apply BLUEPRINT_SCHEMA.
+    if "schema" in inspect.signature(Blueprint.__init__).parameters:
+        kwargs["schema"] = schemas.BLUEPRINT_SCHEMA
+    blueprint = Blueprint(load_yaml_dict(str(BLUEPRINT_DIR / name)), **kwargs)
     config = BlueprintInputs(blueprint, {"use_blueprint": {"path": name, "input": inputs}}).async_substitute()
     config["id"] = name
     return config
+
+
+async def _validate(hass, name: str, config: dict) -> None:
+    """Validate an automation config; older Home Assistant raises instead of recording the error."""
+    assert await async_setup_component(hass, "homeassistant", {})
+    result = await async_validate_config_item(hass, name, config)
+    assert result is not None
+    assert getattr(result, "validation_error", None) is None
+    assert not getattr(result, "validation_failed", False)
 
 
 async def _setup(hass, name: str, inputs: dict) -> None:
@@ -88,14 +99,10 @@ def test_every_blueprint_has_minimal_inputs():
 @pytest.mark.parametrize("name", BLUEPRINTS)
 async def test_blueprint_validates(hass, name):
     """Blueprint schema and the substituted automation config are both valid."""
-    assert await async_setup_component(hass, "homeassistant", {})
-    result = await async_validate_config_item(hass, name, _substitute(name, MINIMAL_INPUTS[name]))
-    assert result is not None
-    assert result.validation_error is None
+    await _validate(hass, name, _substitute(name, MINIMAL_INPUTS[name]))
 
 
 async def test_goodbye_validates_with_all_optional_inputs(hass):
-    assert await async_setup_component(hass, "homeassistant", {})
     config = _substitute(
         "goodbye_routine.yaml",
         {
@@ -106,8 +113,7 @@ async def test_goodbye_validates_with_all_optional_inputs(hass):
             "set_climate_away": "climate.house",
         },
     )
-    result = await async_validate_config_item(hass, "goodbye", config)
-    assert result.validation_error is None
+    await _validate(hass, "goodbye", config)
 
 
 async def test_welcome_home_fires_on_away_to_room(hass):
