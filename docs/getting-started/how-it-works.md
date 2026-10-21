@@ -105,25 +105,28 @@ room by adding up the evidence:
 - the model's guess, scaled by its confidence,
 - the learned habit for this time of day, if there is one.
 
-The room with the highest score wins, and the score becomes the confidence.
+Clues that agree on a room reinforce each other, clues for other rooms pull the
+confidence down, and the room with the most support wins.
 
 ??? note "The arithmetic, for the curious"
     With the default weights:
 
-    | Evidence | Room | Points |
+    | Evidence | Room | Weight |
     |---|---|---|
     | `switch.alice_pc` mapped to office (computer) | office | 0.85 |
     | Alice owns `switch.alice_pc` (computer) | office | 0.85 |
     | Language model says office at 85% × weight 0.50 | office | 0.425 |
-    | **Total** | **office** | **2.125** |
 
-    The total is divided by the sum of the three biggest weights
-    (camera 0.95 + computer 0.85 + media 0.80 = 2.6), giving **0.82**. You can
+    Each weight is treated as the chance that clue alone is right, so the
+    chance that all three are wrong is 0.15 × 0.15 × 0.575 ≈ 0.013. No other
+    room has any clues, so the office gets 1 − 0.013 ≈ **0.99**. A competing
+    room would pull that down; see
+    [Accuracy & limits](../using/accuracy.md#how-its-calculated). You can
     change the weights under
     [Confidence Weights](map-rooms.md#confidence-weights).
 
 So `sensor.alice_room` becomes **`office`**, with a `confidence` attribute of
-`0.82` and an `indicators` attribute listing the clues it used.
+`0.99` and an `indicators` attribute listing the clues it used.
 
 ### 5. Learn habits
 

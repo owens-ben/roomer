@@ -44,9 +44,14 @@ blueprint:
           max: 80
           unit_of_measurement: "°F"
 
+variables:
+  target_room: !input target_room
+
 trigger:
+  # to: null fires on room changes only, not on confidence/attribute updates
   - platform: state
     entity_id: !input person_sensor
+    to: null
 
 action:
   - choose:

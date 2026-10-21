@@ -5,7 +5,7 @@ Ready-to-use Home Assistant automation blueprints for common Roomer use cases.
 ## Available Blueprints
 
 ### Welcome Home Lights
-Turn on lights when someone arrives home.
+Turn on lights when someone arrives home (their room sensor changes from `away` to a room).
 
 [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://github.com/owens-ben/Roomer/blob/main/blueprints/welcome_home_lights.yaml)
 
@@ -20,7 +20,7 @@ Transfer music playback as you move between rooms.
 [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://github.com/owens-ben/Roomer/blob/main/blueprints/follow_me_music.yaml)
 
 ### Goodbye Routine
-Run actions when leaving home (lights off, lock doors, set thermostat).
+Run actions once everyone you pick has left home (lights off, lock doors, set thermostat, arm alarm).
 
 [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://github.com/owens-ben/Roomer/blob/main/blueprints/goodbye_routine.yaml)
 
@@ -54,12 +54,14 @@ After importing a blueprint:
 These blueprints require:
 - Roomer integration installed and configured
 - At least one person with a room sensor (`sensor.{name}_room`)
-- For notifications: Roomer notifications enabled (default)
+- For Welcome Home Lights and Goodbye Routine: a device tracker assigned to each person, so their room sensor can become `away`
 
 ## Custom Blueprints
 
-Feel free to modify these blueprints or create your own using Roomer events:
+Feel free to modify these blueprints or create your own. Trigger on the room
+sensor's state (`from: away` for arrivals, `to: away` for departures, `to: null`
+for any room change). Roomer also defines `roomer_person_arrived`,
+`roomer_person_left` and `roomer_room_changed` events, but doesn't fire them yet.
 
-- `roomer_person_arrived` - Fired when someone comes home
-- `roomer_person_left` - Fired when someone leaves
-- `roomer_room_changed` - Fired when someone changes rooms
+If you use templates, declare the inputs they need in a top-level `variables:`
+block; `!input` values are not available to templates otherwise.

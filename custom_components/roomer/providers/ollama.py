@@ -50,7 +50,7 @@ class OllamaProvider(BaseLLMProvider):
                         "stream": False,
                         "options": {
                             "temperature": 0.1,
-                            "num_predict": 20,
+                            "num_predict": 32,  # Room and confidence lines
                         },
                     },
                     timeout=aiohttp.ClientTimeout(total=self.timeout),

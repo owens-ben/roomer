@@ -486,6 +486,9 @@ RULES FOR PETS:
 
 OUTPUT FORMAT (exactly):
 ROOM: <room_name>
+CONFIDENCE: <0.0 to 1.0>
+
+CONFIDENCE is how sure you are: 0.9+ when a camera sees the pet in the room, around 0.5 when guessing from owners, motion or time of day.
 
 Valid rooms: {rooms_str}"""
 
@@ -504,8 +507,22 @@ Camera AI and sensor data OVERRIDE time-of-day assumptions.
 
 OUTPUT FORMAT (exactly):
 ROOM: <room_name>
+CONFIDENCE: <0.0 to 1.0>
+
+CONFIDENCE is how sure you are: 0.9+ when a strong signal (camera, media, PC) points at the room, around 0.5 when guessing from weak hints or time of day.
 
 Valid rooms: {rooms_str}"""
+
+
+def _parse_confidence(value: str) -> float:
+    """Parse a CONFIDENCE value, accepting 0.85 as well as 85 (percent)."""
+    try:
+        confidence = float(value.rstrip("."))
+    except ValueError:
+        return 0.7
+    if confidence > 1.0:
+        confidence /= 100
+    return confidence
 
 
 def parse_llm_response(
@@ -544,7 +561,7 @@ def parse_llm_response(
 
     if room_match:
         room = room_match.group(1).lower()
-        confidence = float(conf_match.group(1)) if conf_match else 0.7
+        confidence = _parse_confidence(conf_match.group(1)) if conf_match else 0.7
         reason = reason_match.group(1).strip() if reason_match else ""
         if room in valid_lower:
             return room, min(1.0, max(0.0, confidence)), reason
