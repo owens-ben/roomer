@@ -53,6 +53,14 @@ trigger:
     entity_id: !input person_sensor
     to: null
 
+condition:
+  - condition: template
+    value_template: >
+      {{ trigger.to_state is not none and
+         trigger.from_state is not none and
+         trigger.to_state.state not in ['unknown', 'unavailable'] and
+         trigger.from_state.state not in ['unknown', 'unavailable'] }}
+
 action:
   - choose:
       - conditions:

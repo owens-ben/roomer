@@ -218,6 +218,33 @@ async def test_room_based_climate(hass):
     assert [c.data["temperature"] for c in calls] == [72, 68]
 
 
+@pytest.mark.parametrize(
+    ("from_state", "to_state"),
+    [
+        (None, "office"),
+        ("office", None),
+        ("unknown", "office"),
+        ("office", "unknown"),
+        ("unavailable", "office"),
+        ("office", "unavailable"),
+    ],
+)
+async def test_room_based_climate_ignores_invalid_states(hass, caplog, from_state, to_state):
+    calls = async_mock_service(hass, "climate", "set_temperature")
+    if from_state is not None:
+        hass.states.async_set("sensor.alice_room", from_state)
+    await _setup(hass, "room_based_climate.yaml", MINIMAL_INPUTS["room_based_climate.yaml"])
+
+    if to_state is None:
+        hass.states.async_remove("sensor.alice_room")
+    else:
+        hass.states.async_set("sensor.alice_room", to_state)
+    await hass.async_block_till_done()
+
+    assert not calls
+    assert not any(record.levelname == "ERROR" for record in caplog.records)
+
+
 @pytest.mark.parametrize(("confidence", "moves"), [(0.65, False), (0.76, True)])
 async def test_follow_me_music_confidence_gate(hass, confidence, moves):
     pauses = async_mock_service(hass, "media_player", "media_pause")
