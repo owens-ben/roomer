@@ -36,7 +36,7 @@ committed. That avoids merge conflicts in `project.pbxproj`.
 
 ```bash
 make open      # generate the project and open it in Xcode
-make build     # build for the simulator (SIMULATOR="iPhone 16" to override)
+make build     # build for the simulator (SIMULATOR="iPhone 17" to override)
 make test
 ```
 
