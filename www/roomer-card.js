@@ -1,8 +1,17 @@
 /**
  * Roomer Presence Card for Lovelace
  *
- * Shows which room each person (or pet) is in, how sure Roomer is,
- * and the top signals behind the guess.
+ * Shows who is in which room, how sure Roomer is, and why. Two looks:
+ * "Daylight" (light) and "Lamplight" (dark).
+ *
+ *  - A header with the count of people home and out.
+ *  - A strip of room tiles. A tile lights up when someone is there with at
+ *    least 50% confidence, shows a dashed ghost when Roomer is only guessing,
+ *    and stays quiet when the room is empty. Rooms are found automatically
+ *    from Roomer's per-room "<room> Occupants" sensors.
+ *  - One row per person: their room and how sure Roomer is ("Sure",
+ *    "Likely" or "Guessing"). Tap a row to see the percentage and the clues
+ *    behind the guess. People who are away show "Out since 6:12 PM".
  *
  * Installation:
  * 1. Copy this file to /config/www/roomer-card.js
@@ -19,17 +28,29 @@
  *   - entity: sensor.alex_room
  *     person: person.alex     # optional, for the avatar picture
  *     name: Alex              # optional display name
- * show_confidence: true
- * show_indicators: true
+ * show_confidence: true       # "Sure/Likely/Guessing" and the percentage
+ * show_indicators: true       # the clues behind each guess
+ *
+ * Fonts (Bricolage Grotesque, Geist, Geist Mono) load from Google Fonts and
+ * fall back to the system font if they can't be reached.
  */
 
 const ROOMER_CARD_VERSION = '0.3.0';
 const DEFAULT_TITLE = "Who's where";
 const AWAY_STATES = ['away', 'not_home', 'unknown', 'unavailable', ''];
+const OUT_STATES = ['away', 'not_home'];
+const PERSON_COLOURS = 4; // Blue, Ember, Moss, Lilac, assigned by position in `entities`
+const OCCUPANTS_ID = /^sensor\..+_occupants$/;
+const MAX_CLUES = 5;
+const SOURCE_LABELS = {
+  device_room: 'a room-tracking device',
+  device_tracker: 'a device tracker',
+  llm: 'the language model',
+};
 const FONT_LINK_ID = 'roomer-card-fonts';
 const FONT_HREF =
-  'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600' +
-  '&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap';
+  'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700' +
+  '&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap';
 
 function ensureFonts() {
   try {
@@ -71,6 +92,11 @@ function prettyRoom(room) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Unknown';
 }
 
+/** "Living Room" -> "living_room", the form Roomer's sensors use as their state. */
+function roomSlug(value) {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, '_');
+}
+
 function initials(name) {
   const parts = String(name).trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return '?';
@@ -88,86 +114,221 @@ function ago(ms) {
   return `${Math.round(h / 24)}d ago`;
 }
 
+/** Confidence in words, and how many of the three dots are filled. */
+function confidenceLevel(conf) {
+  if (conf >= 0.8) return { key: 'sure', word: 'Sure', dots: 3 };
+  if (conf >= 0.5) return { key: 'likely', word: 'Likely', dots: 2 };
+  return { key: 'guess', word: 'Guessing', dots: 1 };
+}
+
+function dotsHtml(filled) {
+  return [0, 1, 2].map((i) => `<i class="d${i < filled ? '' : ' off'}"></i>`).join('');
+}
+
+/** Local time the person left ("6:12 PM"), from the sensor's last_changed. */
+function sinceLabel(state) {
+  const ts = Date.parse(state.last_changed || state.last_updated || '');
+  if (Number.isNaN(ts)) return '';
+  return new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+/**
+ * Roomer's per-room occupants sensors: `sensor.*_occupants` with `people` and
+ * `pets` list attributes. Returns [{id, label, slug}] sorted by name.
+ */
+function discoverRooms(states) {
+  const rooms = [];
+  for (const id of Object.keys(states)) {
+    if (!OCCUPANTS_ID.test(id)) continue;
+    const attrs = (states[id] && states[id].attributes) || {};
+    if (!Array.isArray(attrs.people) || !Array.isArray(attrs.pets)) continue;
+    const label = String(attrs.friendly_name || '').replace(/\s+occupants$/i, '').trim()
+      || prettyRoom(id.slice('sensor.'.length).replace(/_occupants$/, ''));
+    const slug = roomSlug(label);
+    rooms.push({ id, label: prettyRoom(slug), slug });
+  }
+  return rooms.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** One clue: "motion: living_room_motion" -> label "Motion" + mono value. */
+function clueHtml(clue) {
+  const text = String(clue);
+  const m = /^([a-z_ ]+):\s*(.+)$/i.exec(text);
+  if (!m) return `<li class="clue"><span class="clue-label">${esc(text)}</span></li>`;
+  return `<li class="clue"><span class="clue-label">${esc(prettyRoom(m[1]))}</span>`
+    + `<span class="clue-val">${esc(m[2])}</span></li>`;
+}
+
 const STYLES = `
   :host { display: block; }
+  [hidden] { display: none !important; }
   ha-card.rc {
-    --rc-bg: #FBF6EC; --rc-surface: #FFFFFF; --rc-ink: #2A2419; --rc-body: #4A4033;
-    --rc-muted: #6B6150; --rc-line: #E7DCC5; --rc-line-strong: #D9CCB1;
-    --rc-primary: #3E5C82; --rc-primary-ink: #31496A; --rc-tint1: #DCE4EE;
-    --rc-secondary-ink: #47573A; --rc-tint2: #E4EADB;
-    --rc-highlight-ink: #6F5213; --rc-tint3: #F7E4B5;
-    --rc-font-body: 'DM Sans', var(--paper-font-body1_-_font-family, system-ui), sans-serif;
-    --rc-font-display: 'Bricolage Grotesque', var(--paper-font-body1_-_font-family, system-ui), sans-serif;
+    /* Daylight */
+    --rc-bg: #FFFDF8; --rc-line: #E4DACA; --rc-hair: #EFE7D9;
+    --rc-ink: #1C1915; --rc-body: #4A4236; --rc-muted: #6E6556;
+    --rc-pill-bg: #EFE7D9; --rc-pill-ink: #4A4236;
+    --rc-tile-empty-bg: #F5F0E6; --rc-tile-empty-line: #E4DACA; --rc-tile-empty-ink: #6E6556;
+    --rc-tile-lit-bg: #FBEBC4; --rc-tile-lit-line: #EBC977; --rc-tile-lit-ink: #1C1915;
+    --rc-tile-ghost-bg: #F8F1E1; --rc-tile-ghost-line: #E2C98E; --rc-tile-ghost-ink: #1C1915;
+    --rc-lamp-lit: none; --rc-lamp-ghost: none;
+    --rc-dot: #1C1915; --rc-dot-off: #8C8273;
+    --rc-away: #4C6B30; --rc-focus: #2F5C8F; --rc-on-person: #FFFFFF;
+    --rc-p0: #2F5C8F; --rc-p1: #A4521C; --rc-p2: #4C6B30; --rc-p3: #6A4A9A;
+    --rc-p0-rgb: 47,92,143; --rc-p1-rgb: 164,82,28; --rc-p2-rgb: 76,107,48; --rc-p3-rgb: 106,74,154;
+    --rc-font-body: 'Geist', var(--paper-font-body1_-_font-family, system-ui), sans-serif;
+    --rc-font-display: 'Bricolage Grotesque', 'Geist', var(--paper-font-body1_-_font-family, system-ui), sans-serif;
+    --rc-font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     --ha-card-box-shadow: none;
     --ha-card-background: var(--rc-bg);
-    --ha-card-border-radius: 14px;
+    --ha-card-border-radius: 22px;
     --ha-card-border-width: 1px;
     --ha-card-border-color: var(--rc-line);
-    display: block;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
     box-sizing: border-box;
     background: var(--rc-bg);
     border: 1px solid var(--rc-line);
-    border-radius: 14px;
+    border-radius: 22px;
     box-shadow: none;
-    padding: 20px;
-    color: var(--rc-body);
+    padding: 22px;
+    color: var(--rc-ink);
     font-family: var(--rc-font-body);
     font-size: 14px;
     line-height: 1.4;
   }
+  /* Lamplight */
   ha-card.rc.dark {
-    --rc-bg: #1A1917; --rc-surface: #23211E; --rc-ink: #F2EEE8; --rc-body: #D3CEC6;
-    --rc-muted: #A39C91; --rc-line: #34312C; --rc-line-strong: #46423B;
-    --rc-primary: #93AECF; --rc-primary-ink: #AFC4DD; --rc-tint1: #21262E;
-    --rc-secondary-ink: #B3C4A1; --rc-tint2: #252A22;
-    --rc-highlight-ink: #E2C27F; --rc-tint3: #2D2A21;
+    --rc-bg: #161412; --rc-line: #2F2B26; --rc-hair: #2A2723;
+    --rc-ink: #F4EFE6; --rc-body: #CFC7BA; --rc-muted: #A69E91;
+    --rc-pill-bg: #24211D; --rc-pill-ink: #CFC7BA;
+    --rc-tile-empty-bg: #1A1815; --rc-tile-empty-line: #2F2B26; --rc-tile-empty-ink: #A69E91;
+    --rc-tile-lit-bg: #1A1815; --rc-tile-lit-line: rgba(245,185,74,0.5); --rc-tile-lit-ink: #F4EFE6;
+    --rc-tile-ghost-bg: #1A1815; --rc-tile-ghost-line: rgba(245,185,74,0.3); --rc-tile-ghost-ink: #CFC7BA;
+    --rc-lamp-lit: radial-gradient(circle at 50% 60%, rgba(245,185,74,0.35), rgba(245,185,74,0.06) 80%);
+    --rc-lamp-ghost: radial-gradient(circle at 50% 60%, rgba(245,185,74,0.12), rgba(245,185,74,0.02) 80%);
+    --rc-dot: #F4EFE6; --rc-dot-off: #7C7468;
+    --rc-away: #A9CF86; --rc-focus: #F5B94A; --rc-on-person: #11100E;
+    --rc-p0: #8DB4F0; --rc-p1: #F4A26C; --rc-p2: #A9CF86; --rc-p3: #CDB0F2;
+    --rc-p0-rgb: 141,180,240; --rc-p1-rgb: 244,162,108; --rc-p2-rgb: 169,207,134; --rc-p3-rgb: 205,176,242;
   }
-  .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .p0 { --pc: var(--rc-p0); --pc-rgb: var(--rc-p0-rgb); }
+  .p1 { --pc: var(--rc-p1); --pc-rgb: var(--rc-p1-rgb); }
+  .p2 { --pc: var(--rc-p2); --pc-rgb: var(--rc-p2-rgb); }
+  .p3 { --pc: var(--rc-p3); --pc-rgb: var(--rc-p3-rgb); }
+
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .title {
-    margin: 0; font-family: var(--rc-font-display); font-weight: 600; font-size: 22px;
-    line-height: 1.2; color: var(--rc-ink); letter-spacing: -0.01em;
+    margin: 0; min-width: 0; font-family: var(--rc-font-display); font-weight: 700; font-size: 24px;
+    line-height: 28px; letter-spacing: -0.025em; color: var(--rc-ink);
   }
   .count {
-    flex: none; font-size: 12px; font-weight: 700; color: var(--rc-primary-ink);
-    background: var(--rc-tint1); border-radius: 999px; padding: 3px 10px;
+    flex: none; font-size: 13px; line-height: 17px; padding: 5px 10px; border-radius: 999px;
+    background: var(--rc-pill-bg); color: var(--rc-pill-ink); white-space: nowrap;
   }
-  .rows { display: flex; flex-direction: column; gap: 10px; }
+
+  /* Room strip */
+  .rooms { display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 6px; }
+  .tile {
+    position: relative; box-sizing: border-box; height: 58px; min-width: 0; padding: 8px;
+    border-radius: 12px; border: 1px solid var(--rc-tile-empty-line);
+    background-color: var(--rc-tile-empty-bg);
+    display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;
+    transition: background-color 600ms ease-out, border-color 600ms ease-out;
+  }
+  .tile::before, .tile::after {
+    content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0;
+    transition: opacity 600ms ease-out;
+  }
+  .tile::before { background: var(--rc-lamp-lit); }
+  .tile::after { background: var(--rc-lamp-ghost); }
+  .tile.lit { background-color: var(--rc-tile-lit-bg); border-color: var(--rc-tile-lit-line); }
+  .tile.lit::before { opacity: 1; }
+  .tile.ghost {
+    background-color: var(--rc-tile-ghost-bg); border-color: var(--rc-tile-ghost-line); border-style: dashed;
+  }
+  .tile.ghost::after { opacity: 1; }
+  .tile-label {
+    position: relative; z-index: 1; font-size: 11px; line-height: 1.3; color: var(--rc-tile-empty-ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .tile.lit .tile-label { color: var(--rc-tile-lit-ink); }
+  .tile.ghost .tile-label { color: var(--rc-tile-ghost-ink); }
+  .tile-people { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 3px; }
+  .pd { flex: none; box-sizing: border-box; width: 10px; height: 10px; border-radius: 50%; background: var(--pc); }
+  .pd.ghost {
+    background: transparent; border: 1.5px dashed var(--pc);
+    animation: rc-breathe 3s ease-in-out infinite;
+  }
+  @keyframes rc-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+  /* People */
+  .rows { display: flex; flex-direction: column; }
+  .person { border-top: 1px solid var(--rc-hair); }
   .row {
-    display: flex; align-items: center; gap: 12px;
-    background: var(--rc-surface); border: 1px solid var(--rc-line);
-    border-radius: 12px; padding: 12px 14px; min-width: 0;
+    display: flex; align-items: center; gap: 12px; box-sizing: border-box; width: 100%; min-width: 0;
+    min-height: 44px; padding: 10px 0;
   }
-  .row.away { background: transparent; border: 1px dashed var(--rc-line-strong); }
+  button.row {
+    appearance: none; -webkit-appearance: none; margin: 0; border: 0; background: none;
+    border-radius: 10px; font: inherit; color: inherit; text-align: left; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button.row:focus-visible { outline: 2px solid var(--rc-focus); outline-offset: 2px; }
   .avatar {
-    flex: none; width: 44px; height: 44px; border-radius: 50%;
+    flex: none; box-sizing: border-box; width: 36px; height: 36px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-weight: 700; font-size: 15px; box-sizing: border-box; overflow: hidden;
+    font-weight: 600; font-size: 14px; line-height: 1;
+    background: var(--pc); color: var(--rc-on-person);
   }
-  .avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
-  .avatar.pic { border: 3px solid var(--rc-primary); background: var(--rc-surface); }
-  .avatar.t1 { background: var(--rc-tint1); color: var(--rc-primary-ink); }
-  .avatar.t2 { background: var(--rc-tint2); color: var(--rc-secondary-ink); }
-  .avatar.t3 { background: var(--rc-tint3); color: var(--rc-highlight-ink); }
-  .info { flex: 1; min-width: 0; }
-  .name { font-size: 14px; font-weight: 700; color: var(--rc-body); }
+  .avatar.guess { background: transparent; color: var(--pc); border: 2px dashed var(--pc); }
+  .avatar.away { background: transparent; color: var(--rc-away); border: 2px solid var(--rc-away); }
+  .avatar.unknown { background: transparent; color: var(--rc-muted); border: 2px solid var(--rc-muted); }
+  .avatar.pic { background: var(--rc-bg); border: 2px solid var(--pc); }
+  .avatar.pic.guess { border-style: dashed; }
+  .avatar.pic.away { border-color: var(--rc-away); }
+  .avatar.pic.unknown { border-color: var(--rc-muted); }
+  .avatar img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+  ha-card.rc.dark .avatar.sure { box-shadow: 0 0 16px rgba(var(--pc-rgb), 0.5); }
+  ha-card.rc.dark .avatar.likely {
+    box-shadow: 0 0 0 5px rgba(var(--pc-rgb), 0.14), 0 0 22px rgba(var(--pc-rgb), 0.4);
+  }
+  .who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .name {
+    font-size: 13px; line-height: 17px; color: var(--rc-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .room {
-    font-family: var(--rc-font-display); font-weight: 600; font-size: 20px; line-height: 1.2;
-    color: var(--rc-primary-ink); letter-spacing: -0.01em;
+    font-size: 18px; font-weight: 600; line-height: 23px; color: var(--rc-ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .row.away .room { color: var(--rc-muted); }
-  .why {
-    font-size: 12px; color: var(--rc-muted); margin-top: 2px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .chip {
-    flex: none; font-size: 12px; font-weight: 700; border-radius: 6px; padding: 4px 8px;
-    white-space: nowrap;
-  }
-  .chip.sure { color: var(--rc-secondary-ink); background: var(--rc-tint2); }
-  .chip.pretty { color: var(--rc-highlight-ink); background: var(--rc-tint3); }
-  .chip.guess { color: var(--rc-muted); background: var(--rc-line); }
+  .row.out .room, .row.unknown .room { color: var(--rc-body); }
+  .conf { flex: none; display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 17px; color: var(--rc-body); }
+  .dots { display: flex; gap: 3px; }
+  .d { box-sizing: border-box; width: 6px; height: 6px; border-radius: 50%; background: var(--rc-dot); }
+  .d.off { background: transparent; border: 1.5px solid var(--rc-dot-off); }
+  .since { flex: none; font-size: 13px; line-height: 17px; color: var(--rc-muted); }
   .missing { font-size: 13px; color: var(--rc-muted); }
-  .foot { margin-top: 14px; font-size: 12px; color: var(--rc-muted); }
+
+  /* Detail panel */
+  .detail { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 12px 48px; }
+  .verdict { margin: 0; font-family: var(--rc-font-mono); font-size: 12px; color: var(--rc-body); }
+  .clues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .clue { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 13px; color: var(--rc-body); }
+  .clue-val { font-family: var(--rc-font-mono); font-size: 11px; color: var(--rc-muted); overflow-wrap: anywhere; }
+  .source { margin: 0; font-size: 12px; color: var(--rc-muted); }
+
+  /* Footer */
+  .foot-row {
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px;
+    font-size: 12px; line-height: 16px; color: var(--rc-muted);
+  }
+  .hint { margin-left: auto; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tile, .tile::before, .tile::after { transition: none; }
+    .pd.ghost { animation: none; }
+  }
 `;
 
 class RoomerCard extends HTMLElement {
@@ -176,6 +337,12 @@ class RoomerCard extends HTMLElement {
     this.attachShadow({ mode: 'open' });
     this._sig = null;
     this._lastUpdated = null;
+    this._open = new Set(); // entity ids whose detail panel is open
+    this._el = null;
+    this.shadowRoot.addEventListener('click', (ev) => {
+      const button = ev.target && ev.target.closest ? ev.target.closest('button[data-entity]') : null;
+      if (button) this._toggle(button.dataset.entity);
+    });
   }
 
   set hass(hass) {
@@ -228,6 +395,56 @@ class RoomerCard extends HTMLElement {
     if (foot && this._lastUpdated) foot.textContent = `Updated ${ago(Date.now() - this._lastUpdated)}`;
   }
 
+  _toggle(entityId) {
+    if (this._open.has(entityId)) this._open.delete(entityId);
+    else this._open.add(entityId);
+    this._render();
+  }
+
+  /** Static scaffold, built once so the room tiles persist and can fade between states. */
+  _buildSkeleton() {
+    this.shadowRoot.innerHTML = `
+      <style>${STYLES}</style>
+      <ha-card class="rc">
+        <div class="head"></div>
+        <div class="rooms" role="list" aria-label="Rooms" hidden></div>
+        <div class="rows"></div>
+        <div class="foot-row" hidden></div>
+      </ha-card>`;
+    const $ = (selector) => this.shadowRoot.querySelector(selector);
+    this._el = { card: $('ha-card'), head: $('.head'), rooms: $('.rooms'), rows: $('.rows'), foot: $('.foot-row') };
+  }
+
+  /** Update the tile elements in place (keyed by room) so colour changes transition. */
+  _patchRooms(tiles) {
+    const container = this._el.rooms;
+    container.hidden = !tiles.length;
+    const existing = new Map();
+    Array.from(container.children).forEach((el) => existing.set(el.dataset.room, el));
+    let prev = null;
+    tiles.forEach((tile) => {
+      let el = existing.get(tile.slug);
+      existing.delete(tile.slug);
+      if (!el) {
+        el = document.createElement('div');
+        el.dataset.room = tile.slug;
+        el.setAttribute('role', 'listitem');
+      }
+      const className = `tile ${tile.state}`;
+      if (el.className !== className) el.className = className;
+      if (el._rcHtml !== tile.html) {
+        el.innerHTML = tile.html;
+        el._rcHtml = tile.html;
+      }
+      if (el.title !== tile.text) el.title = tile.text;
+      if (el.getAttribute('aria-label') !== tile.text) el.setAttribute('aria-label', tile.text);
+      const ref = prev ? prev.nextSibling : container.firstChild;
+      if (el !== ref) container.insertBefore(el, ref);
+      prev = el;
+    });
+    existing.forEach((el) => el.remove());
+  }
+
   _render() {
     if (!this._hass || !this._config) return;
     const states = this._hass.states || {};
@@ -235,10 +452,13 @@ class RoomerCard extends HTMLElement {
     const showConfidence = cfg.show_confidence !== false;
     const showIndicators = cfg.show_indicators !== false;
     const dark = this._isDark();
+    const discovered = discoverRooms(states);
 
     // Skip re-rendering when nothing this card shows has changed.
     const sig = JSON.stringify([
       dark,
+      Array.from(this._open).sort(),
+      discovered.map((r) => [r.id, r.label]),
       this._entries.map((e) => {
         const s = states[e.entity];
         const personId = e.person || `person.${slugFor(e.entity)}`;
@@ -246,6 +466,7 @@ class RoomerCard extends HTMLElement {
         return [
           s ? s.state : null,
           s ? s.last_updated : null,
+          s ? s.last_changed : null,
           s ? s.attributes : null,
           p ? p.attributes.entity_picture : null,
           p ? p.attributes.friendly_name : null,
@@ -259,77 +480,139 @@ class RoomerCard extends HTMLElement {
     this._sig = sig;
 
     let homeCount = 0;
+    let outCount = 0;
     let latest = null;
+    let anyExpandable = false;
+    const occupancy = new Map(); // room slug -> [{colour, name, conf}]
+
     const rows = this._entries.map((entry, index) => {
       const state = states[entry.entity];
       if (!state) {
-        return `<div class="row away"><div class="missing">Entity not found: ${esc(entry.entity)}</div></div>`;
+        return `<div class="person"><div class="row"><div class="missing">Entity not found: ${esc(entry.entity)}</div></div></div>`;
       }
       const attrs = state.attributes || {};
       const personId = entry.person || `person.${slugFor(entry.entity)}`;
       const person = states[personId];
       const pAttrs = (person && person.attributes) || {};
+      const colour = index % PERSON_COLOURS;
 
       const fallbackName = String(attrs.friendly_name || slugFor(entry.entity).replace(/_/g, ' '))
         .replace(/\s+room$/i, '');
       const name = entry.name || pAttrs.friendly_name || fallbackName;
 
       const raw = String(state.state ?? '').toLowerCase();
-      const away = AWAY_STATES.includes(raw);
-      if (!away) homeCount += 1;
-      const roomLabel = raw === 'away' || raw === 'not_home' ? 'Away'
-        : raw === 'unknown' || raw === 'unavailable' || raw === '' ? 'Unknown'
-          : prettyRoom(state.state);
+      const out = OUT_STATES.includes(raw);
+      const unknown = !out && AWAY_STATES.includes(raw);
+      const home = !out && !unknown;
+      const conf = Math.min(1, Math.max(0, Number(attrs.confidence) || 0));
+      const level = confidenceLevel(conf);
+      if (home) homeCount += 1;
+      if (out) outCount += 1;
+      const roomLabel = out ? 'Out' : unknown ? 'Unknown' : prettyRoom(state.state);
+
+      if (home) {
+        const slug = roomSlug(state.state);
+        if (!occupancy.has(slug)) occupancy.set(slug, []);
+        occupancy.get(slug).push({ colour, name, conf });
+      }
 
       const ts = Date.parse(state.last_updated || state.last_changed || '');
       if (!Number.isNaN(ts) && (latest === null || ts > latest)) latest = ts;
 
+      // Avatar
+      const stateClass = out ? 'away' : unknown ? 'unknown' : level.key;
       const pic = pAttrs.entity_picture;
       const avatar = pic
-        ? `<div class="avatar pic"><img src="${esc(pic)}" alt=""></div>`
-        : `<div class="avatar t${(index % 3) + 1}" aria-hidden="true">${esc(initials(name))}</div>`;
+        ? `<span class="avatar p${colour} ${stateClass} pic" aria-hidden="true"><img src="${esc(pic)}" alt=""></span>`
+        : `<span class="avatar p${colour} ${stateClass}" aria-hidden="true">${esc(initials(name))}</span>`;
 
-      let why = '';
-      const indicators = Array.isArray(attrs.indicators) ? attrs.indicators : [];
-      if (showIndicators && indicators.length) {
-        const text = indicators.slice(0, 2).map((i) => String(i)).join(' · ');
-        why = `<div class="why" title="${esc(text)}">${esc(text)}</div>`;
+      // Right-hand side
+      let right = '';
+      if (home && showConfidence) {
+        right = `<span class="conf"><span>${level.word}</span><span class="dots" aria-hidden="true">${dotsHtml(level.dots)}</span></span>`;
+      } else if (out) {
+        const since = sinceLabel(state);
+        if (since) right = `<span class="since">since ${esc(since)}</span>`;
       }
 
-      let chip = '';
-      if (showConfidence && !away) {
-        const conf = Math.min(1, Math.max(0, Number(attrs.confidence) || 0));
-        const pct = Math.round(conf * 100);
-        const [cls, word] = conf >= 0.8 ? ['sure', 'Sure'] : conf >= 0.5 ? ['pretty', 'Pretty sure'] : ['guess', 'Guessing'];
-        chip = `<span class="chip ${cls}">${word} · ${pct}%</span>`;
-      }
+      // Detail panel: what Roomer thinks and why
+      const verdict = showConfidence && home ? `Roomer is ${level.word.toLowerCase()} · ${Math.round(conf * 100)}%` : '';
+      const clues = showIndicators && Array.isArray(attrs.indicators)
+        ? attrs.indicators.map((i) => String(i).trim()).filter(Boolean).slice(0, MAX_CLUES)
+        : [];
+      const source = showIndicators && attrs.source
+        ? SOURCE_LABELS[attrs.source] || String(attrs.source).replace(/_/g, ' ')
+        : '';
+      const expandable = !!verdict || clues.length > 0 || !!source;
+      if (expandable) anyExpandable = true;
+      const open = expandable && this._open.has(entry.entity);
+      const detailId = `rc-detail-${index}`;
+      const detail = open
+        ? `<div class="detail" id="${detailId}">`
+          + (verdict ? `<p class="verdict">${esc(verdict)}</p>` : '')
+          + (clues.length ? `<ul class="clues">${clues.map(clueHtml).join('')}</ul>` : '')
+          + (source ? `<p class="source">Decided by ${esc(source)}</p>` : '')
+          + '</div>'
+        : '';
 
-      return `
-        <div class="row${away ? ' away' : ''}">
-          ${avatar}
-          <div class="info">
-            <div class="name">${esc(name)}</div>
-            <div class="room">${esc(roomLabel)}</div>
-            ${why}
-          </div>
-          ${chip}
-        </div>`;
+      const rowClass = `row${out ? ' out' : unknown ? ' unknown' : ''}`;
+      const inner = `${avatar}<span class="who"><span class="name">${esc(name)}</span>`
+        + `<span class="room">${esc(roomLabel)}</span></span>${right}`;
+      const rowHtml = expandable
+        ? `<button type="button" class="${rowClass}" data-entity="${esc(entry.entity)}" aria-expanded="${open}"`
+          + `${open ? ` aria-controls="${detailId}"` : ''}>${inner}</button>`
+        : `<div class="${rowClass}">${inner}</div>`;
+      return `<div class="person">${rowHtml}${detail}</div>`;
     });
+
+    // Room tiles: every Roomer room, plus any room someone is in that we haven't discovered.
+    const tiles = [];
+    const seen = new Set();
+    const addTile = (slug, label) => {
+      if (!slug || seen.has(slug)) return;
+      seen.add(slug);
+      const occ = occupancy.get(slug) || [];
+      const sure = occ.filter((o) => o.conf >= 0.5);
+      const guesses = occ.filter((o) => o.conf < 0.5);
+      const dots = sure.map((o) => `<i class="pd p${o.colour}"></i>`).join('')
+        + guesses.map((o) => `<i class="pd ghost p${o.colour}"></i>`).join('');
+      const who = sure.map((o) => o.name).concat(guesses.map((o) => `${o.name} (guess)`));
+      tiles.push({
+        slug,
+        state: sure.length ? 'lit' : guesses.length ? 'ghost' : 'empty',
+        html: `<span class="tile-label">${esc(label)}</span>`
+          + (dots ? `<span class="tile-people" aria-hidden="true">${dots}</span>` : ''),
+        text: `${label}: ${who.length ? who.join(', ') : 'empty'}`,
+      });
+    };
+    discovered.forEach((r) => addTile(r.slug, r.label));
+    occupancy.forEach((_, slug) => addTile(slug, prettyRoom(slug)));
 
     this._lastUpdated = latest;
     const title = cfg.title || DEFAULT_TITLE;
-    const foot = latest !== null ? `<div class="foot">Updated ${ago(Date.now() - latest)}</div>` : '';
+    const countText = `${homeCount} home${outCount ? ` · ${outCount} out` : ''}`;
+    const footParts = [
+      latest !== null ? `<span class="foot">Updated ${ago(Date.now() - latest)}</span>` : '',
+      anyExpandable ? '<span class="hint">Tap anyone for why</span>' : '',
+    ].join('');
 
-    this.shadowRoot.innerHTML = `
-      <style>${STYLES}</style>
-      <ha-card class="rc${dark ? ' dark' : ''}">
-        <div class="head">
-          <h2 class="title">${esc(title)}</h2>
-          <span class="count">${homeCount} home</span>
-        </div>
-        <div class="rows">${rows.join('')}</div>
-        ${foot}
-      </ha-card>`;
+    // Rewriting the rows drops focus; put it back on the same person afterwards.
+    if (!this._el) this._buildSkeleton();
+    const active = this.shadowRoot.activeElement;
+    const focusId = active && active.dataset && this._el.rows.contains(active) ? active.dataset.entity : null;
+
+    this._el.card.classList.toggle('dark', dark);
+    this._el.head.innerHTML = `<h2 class="title">${esc(title)}</h2><span class="count">${countText}</span>`;
+    this._patchRooms(tiles);
+    this._el.rows.innerHTML = rows.join('');
+    this._el.foot.hidden = !footParts;
+    this._el.foot.innerHTML = footParts;
+
+    if (focusId) {
+      const again = Array.from(this._el.rows.querySelectorAll('button[data-entity]'))
+        .find((b) => b.dataset.entity === focusId);
+      if (again) again.focus({ preventScroll: true });
+    }
   }
 
   static getConfigElement() {
@@ -460,6 +743,6 @@ if (!window.customCards.some((c) => c.type === 'roomer-card')) {
 }
 
 console.info(`%c Roomer Card %c v${ROOMER_CARD_VERSION} `,
-  'background: #3E5C82; color: white; padding: 2px 6px; border-radius: 3px 0 0 3px;',
+  'background: #F5B94A; color: #11100E; padding: 2px 6px; border-radius: 3px 0 0 3px;',
   'background: #4A4033; color: white; padding: 2px 6px; border-radius: 0 3px 3px 0;'
 );

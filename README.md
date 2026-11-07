@@ -21,7 +21,7 @@ Roomer is a Home Assistant integration that gives every person (and pet) in your
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/owens-ben/roomer/main/docs/assets/screenshots/card-dark.png">
-    <img src="https://raw.githubusercontent.com/owens-ben/roomer/main/docs/assets/screenshots/card-light.png" alt="The Roomer dashboard card: Alice in the office (Sure, 91%), Max in the living room (Pretty sure, 64%), Bob away" width="420">
+    <img src="https://raw.githubusercontent.com/owens-ben/roomer/main/docs/assets/screenshots/card-light.png" alt="The Roomer dashboard card: Alice in the office (Sure), Max in the living room (Likely), Bob out since 6:12 PM; the occupied rooms are lit" width="420">
   </picture>
 </p>
 

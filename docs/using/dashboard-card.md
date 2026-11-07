@@ -1,9 +1,9 @@
 # Dashboard card
 
-Roomer comes with a small Lovelace card, `custom:roomer-card`, titled "Who's where". It shows each person's room, how sure Roomer is, and the top signals behind the guess. There is also a ready-made full dashboard if you want more.
+Roomer comes with a small Lovelace card, `custom:roomer-card`, titled "Who's where". It lights up the rooms that are occupied, shows each person's room and how sure Roomer is, and opens to the clues behind a guess when you tap their row. There is also a ready-made full dashboard if you want more.
 
 !!! example "Screenshot needed: card-example.png"
-    The Roomer card on a dashboard with two people: one in `office` (a "Sure · 91%" chip and a line such as "computer: alice_pc") and one `away` (dashed outline, no chip).
+    The Roomer card on a dashboard with two people: one in `office` ("Sure" with three dots, and the office tile lit above) and one `away` ("Out since 6:12 PM", a hollow green ring and no confidence).
 
 ## Install the card
 
@@ -44,7 +44,7 @@ lovelace:
 !!! tip "Updating the card"
     Browsers cache this file aggressively. After copying in a new version, change the resource URL to `/local/roomer-card.js?v=2` (and bump the number each time) so every device picks up the change.
 
-To check it loaded, open your browser's developer console. You should see a blue **Roomer Card v0.3.0** banner.
+To check it loaded, open your browser's developer console. You should see an amber and dark **Roomer Card v0.3.0** banner.
 
 ## Add the card to a dashboard
 
@@ -83,24 +83,28 @@ entities:
 | `type` | yes | | Must be `custom:roomer-card` |
 | `entities` | yes | | A list of Roomer room sensors (`sensor.<name>_room`). Each entry is a plain entity ID, or an object with `entity` (required), `person` (a `person.` entity to take the picture and name from) and `name` (display name). The card shows an error if this is missing. |
 | `title` | no | `Who's where` | The card header |
-| `show_confidence` | no | `true` | Shows a chip with the `confidence` attribute in words and as a percentage: **Sure** from 80%, **Pretty sure** from 50%, **Guessing** below that. Hidden for people who are away. |
-| `show_indicators` | no | `true` | Shows up to two of the `indicators` on a small line under the room |
-| `theme` | no | `auto` | `auto` follows Home Assistant's light or dark mode; `light` or `dark` forces one |
+| `show_confidence` | no | `true` | Shows how sure Roomer is on each row: **Sure** (80% and up, three dots), **Likely** (50% and up, two dots) or **Guessing** (below that, one dot). The percentage appears when you tap the row. Hidden for people who are out. |
+| `show_indicators` | no | `true` | Lists the clues behind each guess (up to five) when you tap the row, plus what made the call (a room-tracking device, a device tracker or the language model) |
+| `theme` | no | `auto` | `auto` follows Home Assistant's light or dark mode; `light` (Daylight) or `dark` (Lamplight) forces one |
 
 Those are all the options; the card's colours, fonts and layout are fixed.
 
 ### What the card shows
 
-- **Header** shows the title and how many people are home (anyone not `away`, `not_home`, `unknown` or `unavailable`).
+- **Header** shows the title and how many people are home and out, for example "3 home · 1 out" (anyone in `away`, `not_home`, `unknown` or `unavailable` is not counted as home).
+- **Room strip** shows one small tile per room, taken from Roomer's `sensor.<room>_occupants` sensors. A tile is lit when someone is there and Roomer is at least "Likely". It is a dashed ghost when Roomer is only guessing. The coloured dots are the people in it. If you have no room sensors, the strip shows just the rooms your listed people are in.
+- **Colour** goes with each person: Blue, Ember, Moss, then Lilac, by their position in `entities`. Their name is always shown next to it.
 - **Name** comes from `name:` if you set it, otherwise the matching person entity's name, otherwise the sensor's friendly name without "Room".
-- **Picture**: the card looks for `person.<name>` (for `sensor.alice_room` that is `person.alice`, or the `person:` you set). If that person has a picture, it is shown in a blue ring; otherwise the card shows their initials on a coloured circle.
+- **Picture**: the card looks for `person.<name>` (for `sensor.alice_room` that is `person.alice`, or the `person:` you set). If that person has a picture, it is shown in a ring in their colour; otherwise the card shows their initials on a coloured circle. In dark mode a "Sure" avatar gets a sharp glow and a "Likely" one a wider, softer halo; a "Guessing" avatar is drawn as a dashed ring.
 - **Room** is the sensor's state with underscores turned into spaces, for example "Living room".
-- Rows for people who are `away`, `not_home`, `unknown` or `unavailable` have a dashed outline and no confidence chip.
+- **Confidence** is a word and three dots on the right of each row ("Sure", "Likely", "Guessing").
+- **Out**: people who are `away` or `not_home` show a hollow green ring, "Out" and when they left ("since 6:12 PM"), with no confidence. `unknown` and `unavailable` show "Unknown".
+- **Tap a row** to see why: the confidence as a percentage, the clues Roomer used and what decided the room. Rows with nothing to show aren't tappable.
 - **Footer** says when the most recently updated sensor last changed, for example "Updated 12s ago".
 - An entity that doesn't exist shows as `Entity not found: <entity_id>`.
 
 !!! note "Confidence is usually lower than you expect"
-    Roomer's `confidence` values often sit between 30% and 60% even when the room is right, so "Guessing" or "Pretty sure" is normal. [Accuracy & limits](accuracy.md) explains why.
+    Roomer's `confidence` values often sit between 30% and 60% even when the room is right, so "Guessing" or "Likely" is normal. [Accuracy & limits](accuracy.md) explains why.
 
 ## The full Roomer dashboard (YAML)
 

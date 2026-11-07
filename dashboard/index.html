@@ -4,66 +4,113 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Roomer</title>
-    <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 88"%3E %3Crect width="88" height="88" rx="22" fill="%233E5C82"/%3E %3Cpath d="M12 38 L44 13 L76 38" fill="none" stroke="%23FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/%3E %3Crect x="20" y="41" width="22" height="16" rx="4" fill="%23E8B23A"/%3E %3Crect x="46" y="41" width="22" height="16" rx="4" fill="%23FFFFFF" opacity="0.25"/%3E %3Crect x="20" y="60" width="22" height="16" rx="4" fill="%23FFFFFF" opacity="0.25"/%3E %3Crect x="46" y="60" width="22" height="16" rx="4" fill="%23FFFFFF"/%3E %3Ccircle cx="31" cy="49" r="4" fill="%233E5C82"/%3E %3Ccircle cx="57" cy="68" r="4" fill="%233E5C82"/%3E %3C/svg%3E'>
+    <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 88"%3E %3Crect width="88" height="88" rx="22" fill="%2324211D"/%3E %3Cpath d="M14 38 L44 15 L74 38" fill="none" stroke="%23F4EFE6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/%3E %3Crect x="22" y="40" width="20" height="15" rx="3" fill="%23F5B94A"/%3E %3Crect x="46" y="40" width="20" height="15" rx="3" fill="%23F4EFE6" opacity="0.14"/%3E %3Crect x="22" y="58" width="20" height="15" rx="3" fill="%23F5B94A" opacity="0.55"/%3E %3Crect x="46" y="58" width="20" height="15" rx="3" fill="%23F4EFE6" opacity="0.14"/%3E %3C/svg%3E'>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
+        /* Two lights. Daylight is the default; Lamplight follows the OS dark mode,
+           and ambient mode forces it. Lamp amber means one thing: someone is in this room. */
         :root {
             color-scheme: light;
-            --bg: #FBF6EC;
-            --surface: #FFFFFF;
-            --ink: #2A2419;
-            --body: #4A4033;
-            --muted: #6B6150;
-            --line: #E7DCC5;
-            --line-strong: #D9CCB1;
-            --primary: #3E5C82;
-            --primary-ink: #31496A;
+            --bg: #F5F0E6;
+            --surface: #FFFDF8;
+            --room: #F5F0E6;
+            --ink: #1C1915;
+            --body: #4A4236;
+            --muted: #6E6556;
+            --line: #E4DACA;
+            --line-strong: #D6CAB5;
+            --primary: #2F5C8F;
+            --primary-ink: #1F4470;
             --on-primary: #FFFFFF;
-            --tint1: #DCE4EE;
-            --secondary: #5B6E4A;
-            --secondary-ink: #47573A;
-            --tint2: #E4EADB;
-            --highlight: #E8B23A;
-            --highlight-ink: #6F5213;
-            --tint3: #F7E4B5;
-            /* Semantic error colour (not part of the palette, contrast-checked) */
+            --lamp: #E8A92E;
+            --online: #4C6B30;
+            /* Rooms: lit (sure), lit softly (likely), ghost (guessing only) */
+            --lit-fill: #FBEBC4;
+            --lit-fill-soft: #FBF3DC;
+            --lit-line: #EBC977;
+            --ghost-fill: #F8F1E1;
+            --ghost-line: #E2C98E;
+            /* People have colours: Blue, Ember, Moss, Lilac */
+            --p1: #2F5C8F;
+            --p2: #A4521C;
+            --p3: #4C6B30;
+            --p4: #6A4A9A;
+            --on-person: #FFFFFF;
+            --glow: 0;
             --danger-ink: #9A3324;
             --danger-tint: #F6E1DA;
-            /* "Guessing" chip ink: muted-on-line is 4.47:1 in light, so use body ink there */
-            --guess-ink: #4A4033;
 
-            --font-display: 'Bricolage Grotesque', 'DM Sans', system-ui, sans-serif;
-            --font-text: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-            --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
-            --r-card: 14px;
-            --r-ctl: 10px;
+            --font-display: 'Bricolage Grotesque', 'Geist', system-ui, sans-serif;
+            --font-text: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+            --r-card: 20px;
+            --r-ctl: 12px;
             --r-chip: 6px;
         }
 
         @media (prefers-color-scheme: dark) {
-            :root {
+            :root:not([data-theme="light"]) {
                 color-scheme: dark;
-                --bg: #1A1917;
-                --surface: #23211E;
-                --ink: #F2EEE8;
-                --body: #D3CEC6;
-                --muted: #A39C91;
-                --line: #34312C;
-                --line-strong: #46423B;
-                --primary: #93AECF;
-                --primary-ink: #AFC4DD;
-                --on-primary: #1A1917;
-                --tint1: #21262E;
-                --secondary-ink: #B3C4A1;
-                --tint2: #252A22;
-                --highlight-ink: #E2C27F;
-                --tint3: #2D2A21;
+                --bg: #11100E;
+                --surface: #161412;
+                --room: #1A1815;
+                --ink: #F4EFE6;
+                --body: #CFC7BA;
+                --muted: #A69E91;
+                --line: #2F2B26;
+                --line-strong: #3A352F;
+                --primary: #F5B94A;
+                --primary-ink: #FFD58A;
+                --on-primary: #11100E;
+                --lamp: #F5B94A;
+                --online: #A9CF86;
+                --lit-fill: radial-gradient(circle at 50% 55%, rgba(245,185,74,0.34), rgba(245,185,74,0.06) 80%), #1A1815;
+                --lit-fill-soft: radial-gradient(circle at 50% 55%, rgba(245,185,74,0.2), rgba(245,185,74,0.04) 80%), #1A1815;
+                --lit-line: rgba(245,185,74,0.5);
+                --ghost-fill: radial-gradient(circle at 50% 55%, rgba(245,185,74,0.1), rgba(245,185,74,0.02) 80%), #1A1815;
+                --ghost-line: rgba(245,185,74,0.3);
+                --p1: #8DB4F0;
+                --p2: #F4A26C;
+                --p3: #A9CF86;
+                --p4: #CDB0F2;
+                --on-person: #11100E;
+                --glow: 1;
                 --danger-ink: #E8A493;
                 --danger-tint: #33231F;
-                --guess-ink: #A39C91;
             }
+        }
+
+        /* Wall tablet / ambient mode is always Lamplight */
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --bg: #0C0B0A;
+            --surface: #161412;
+            --room: #141210;
+            --ink: #F4EFE6;
+            --body: #CFC7BA;
+            --muted: #A69E91;
+            --line: #26231F;
+            --line-strong: #3A352F;
+            --primary: #F5B94A;
+            --primary-ink: #FFD58A;
+            --on-primary: #11100E;
+            --lamp: #F5B94A;
+            --online: #A9CF86;
+            --lit-fill: radial-gradient(circle at 50% 55%, rgba(245,185,74,0.34), rgba(245,185,74,0.06) 80%), #161412;
+            --lit-fill-soft: radial-gradient(circle at 50% 55%, rgba(245,185,74,0.2), rgba(245,185,74,0.04) 80%), #161412;
+            --lit-line: rgba(245,185,74,0.5);
+            --ghost-fill: radial-gradient(circle at 50% 55%, rgba(245,185,74,0.1), rgba(245,185,74,0.02) 80%), #141210;
+            --ghost-line: rgba(245,185,74,0.3);
+            --p1: #8DB4F0;
+            --p2: #F4A26C;
+            --p3: #A9CF86;
+            --p4: #CDB0F2;
+            --on-person: #11100E;
+            --glow: 1;
+            --danger-ink: #E8A493;
+            --danger-tint: #33231F;
         }
 
         * {
@@ -84,9 +131,9 @@
 
         h1, h2, h3, .card-title, .room-name, .person-location {
             font-family: var(--font-display);
-            font-weight: 600;
+            font-weight: 700;
             color: var(--ink);
-            letter-spacing: -0.01em;
+            letter-spacing: -0.025em;
         }
 
         .container {
@@ -162,7 +209,7 @@
             flex: none;
         }
 
-        .status-dot.online { background: var(--secondary-ink); }
+        .status-dot.online { background: var(--online); }
         .status-dot.offline { background: var(--danger-ink); }
 
         /* Main grid */
@@ -208,8 +255,9 @@
             font-size: 0.8rem;
         }
 
-        /* Avatars */
+        /* Avatars: every person has a colour that travels with their name */
         .avatar {
+            --pc: var(--p1);
             width: 40px;
             height: 40px;
             border-radius: 50%;
@@ -217,125 +265,240 @@
             align-items: center;
             justify-content: center;
             flex: none;
+            box-sizing: border-box;
             font-family: var(--font-text);
             font-size: 0.9rem;
             font-weight: 600;
-            letter-spacing: 0.02em;
-            color: var(--ink);
+            background: var(--pc);
+            color: var(--on-person);
         }
 
-        .avatar.tint-1 { background: var(--tint1); color: var(--primary-ink); }
-        .avatar.tint-2 { background: var(--tint2); color: var(--secondary-ink); }
-        .avatar.tint-3 { background: var(--tint3); color: var(--highlight-ink); }
+        .avatar.c1 { --pc: var(--p1); }
+        .avatar.c2 { --pc: var(--p2); }
+        .avatar.c3 { --pc: var(--p3); }
+        .avatar.c4 { --pc: var(--p4); }
+
+        /* Sharp light for "sure", wide soft halo for "likely" (Lamplight only) */
+        .avatar.t-sure {
+            box-shadow: 0 0 calc(16px * var(--glow)) color-mix(in srgb, var(--pc) calc(50% * var(--glow)), transparent);
+        }
+
+        .avatar.t-likely {
+            box-shadow:
+                0 0 0 calc(5px * var(--glow)) color-mix(in srgb, var(--pc) calc(14% * var(--glow)), transparent),
+                0 0 calc(22px * var(--glow)) color-mix(in srgb, var(--pc) calc(40% * var(--glow)), transparent);
+        }
+
+        /* A guess is a dashed ghost that breathes */
+        .avatar.t-guess {
+            background: transparent;
+            border: 2px dashed var(--pc);
+            color: var(--pc);
+            animation: breathe 3s ease-in-out infinite;
+        }
+
+        .avatar.away {
+            background: transparent;
+            border: 2px solid var(--online);
+            color: var(--online);
+        }
 
         .avatar.picture {
             object-fit: cover;
-            outline: 3px solid var(--primary);
-            outline-offset: 0;
-            border: 2px solid var(--surface);
+            border: 2px solid var(--pc);
+            background: var(--surface);
+        }
+
+        @keyframes breathe {
+            50% { opacity: 0.6; }
         }
 
         /* Person card */
+        #persons-grid {
+            align-items: start;
+        }
+
         .person-location {
-            font-size: 1.75rem;
+            font-size: 1.5rem;
             line-height: 1.15;
-            color: var(--primary-ink);
-            margin-bottom: 0.75rem;
-            text-transform: capitalize;
+            color: var(--ink);
+            margin-bottom: 0.625rem;
         }
 
         .person-card.away,
         .pet-card.away {
-            border: 1px dashed var(--line-strong);
+            border-style: dashed;
+            border-color: var(--line-strong);
         }
 
         .away .person-location {
             color: var(--muted);
         }
 
+        .confidence-line {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--body);
+        }
+
+        .confidence-line .since {
+            margin-left: auto;
+            color: var(--muted);
+            font-size: 0.8rem;
+        }
+
+        .dots {
+            display: inline-flex;
+            gap: 3px;
+        }
+
+        .dots i {
+            width: 6px;
+            height: 6px;
+            box-sizing: border-box;
+            border-radius: 50%;
+            background: var(--ink);
+        }
+
+        .dots i.off {
+            background: transparent;
+            border: 1.5px solid var(--muted);
+        }
+
+        /* Why Roomer thinks so */
+        .why {
+            margin-top: 0.875rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid var(--line);
+        }
+
+        .why summary {
+            display: flex;
+            align-items: center;
+            min-height: 44px;
+            color: var(--primary-ink);
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .why-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.625rem;
+            padding-bottom: 0.25rem;
+        }
+
         .confidence-bar {
-            height: 4px;
-            background: var(--line);
-            border-radius: 2px;
+            display: flex;
+            gap: 2px;
+            height: 12px;
+            border-radius: 6px;
             overflow: hidden;
-            margin: 0 0 0.75rem;
+            background: var(--line);
         }
 
         .confidence-fill {
             height: 100%;
             min-width: 2px;
-            border-radius: 2px;
+            background: var(--pc, var(--primary));
             transition: width 0.4s ease;
-            background: var(--muted);
         }
-
-        .conf-sure .confidence-fill { background: var(--secondary-ink); }
-        .conf-pretty .confidence-fill { background: var(--highlight); }
 
         .confidence-text {
             display: flex;
+            justify-content: space-between;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--muted);
         }
 
-        .chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.375rem;
-            padding: 0.2rem 0.55rem;
-            border-radius: var(--r-chip);
-            font-size: 0.8rem;
-            font-weight: 500;
-            line-height: 1.4;
-        }
+        .confidence-text span:first-child { color: var(--ink); }
 
-        .chip-sure { background: var(--tint2); color: var(--secondary-ink); }
-        .chip-pretty { background: var(--tint3); color: var(--highlight-ink); }
-        .chip-guess { background: var(--line); color: var(--guess-ink); }
-
-        .indicators {
+        .clues {
+            list-style: none;
             display: flex;
-            flex-wrap: wrap;
-            gap: 0.375rem;
-            margin-top: 0.875rem;
-            padding-top: 0.875rem;
-            border-top: 1px solid var(--line);
+            flex-direction: column;
         }
 
         .indicator {
-            display: inline-flex;
+            display: flex;
             align-items: center;
-            padding: 0.2rem 0.55rem;
-            background: var(--surface);
+            gap: 0.75rem;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .indicator:last-child { border-bottom: none; }
+
+        .indicator .clue-icon {
+            flex: none;
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            background: var(--room);
             border: 1px solid var(--line);
-            border-radius: var(--r-chip);
-            font-size: 0.8rem;
-            color: var(--body);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--ink);
         }
 
-        .indicator.active {
-            background: var(--tint1);
-            border-color: var(--tint1);
-            color: var(--primary-ink);
+        .indicator .clue-text {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            font-size: 0.9rem;
+            color: var(--ink);
         }
 
-        /* Room grid */
+        .indicator .clue-id {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .why-note {
+            font-size: 0.75rem;
+            line-height: 1.45;
+            color: var(--muted);
+        }
+
+        /* The house, lit from within */
         .rooms-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 0.75rem;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.5rem;
         }
 
         .room-tile {
-            background: var(--bg);
+            min-height: 132px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 0.5rem;
+            background: var(--room);
             border: 1px solid var(--line);
-            border-radius: 12px;
-            padding: 0.875rem 1rem;
-            transition: border-color 0.15s ease, background 0.15s ease;
+            border-radius: 16px;
+            padding: 0.75rem 0.875rem;
+            transition: background 0.6s ease-out, border-color 0.6s ease-out;
         }
 
         .room-tile .room-name {
-            font-size: 1rem;
-            text-transform: capitalize;
-            margin-bottom: 0.125rem;
+            font-family: var(--font-text);
+            font-size: 0.8rem;
+            font-weight: 500;
+            letter-spacing: 0;
+            color: var(--muted);
+        }
+
+        .room-tile .room-name::first-letter {
+            text-transform: uppercase;
         }
 
         .room-tile .room-status {
@@ -343,31 +506,58 @@
             color: var(--muted);
         }
 
+        .room-tile .room-people {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.875rem;
+            flex: 1;
+        }
+
         .room-tile.occupied {
-            background: var(--tint1);
-            border-color: var(--primary);
+            background: var(--lit-fill-soft);
+            border-color: var(--lit-line);
+        }
+
+        .room-tile.occupied.sure {
+            background: var(--lit-fill);
+        }
+
+        .room-tile.occupied.ghost {
+            background: var(--ghost-fill);
+            border: 1px dashed var(--ghost-line);
         }
 
         .room-tile.occupied .room-name {
-            color: var(--primary-ink);
+            color: var(--ink);
         }
 
         .room-tile.occupied .room-status {
-            color: var(--body);
-            font-weight: 500;
+            color: var(--ink);
         }
 
-        .room-tile[data-room="away"] {
-            border-style: dashed;
-            border-color: var(--line-strong);
-        }
-
-        .room-tile[data-room="away"].occupied {
-            background: var(--surface);
-        }
-
-        .room-tile[data-room="away"].occupied .room-name {
+        .away-line {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.375rem 1.25rem;
+            margin-top: 0.875rem;
+            font-size: 0.9rem;
             color: var(--muted);
+        }
+
+        .away-line span {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .away-line .ring {
+            width: 10px;
+            height: 10px;
+            box-sizing: border-box;
+            border-radius: 50%;
+            border: 2px solid var(--online);
         }
 
         /* Vision panel */
@@ -656,6 +846,12 @@
             height: 10px;
         }
 
+        .connected-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
         #auth-method {
             color: var(--muted);
             font-size: 0.8rem;
@@ -725,6 +921,156 @@
             margin-top: 0.875rem;
         }
 
+        /* Hero: the house in a sentence */
+        .hero {
+            grid-area: hero;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .hero-eyebrow {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .hero-title {
+            font-size: clamp(2rem, 5vw, 2.75rem);
+            line-height: 1.02;
+            letter-spacing: -0.03em;
+        }
+
+        .hero-summary {
+            max-width: 40rem;
+            font-size: 1.1rem;
+            line-height: 1.45;
+            color: var(--body);
+        }
+
+        .ambient-only { display: none; }
+
+        .ambient-exit {
+            display: none;
+            position: fixed;
+            right: 1rem;
+            bottom: 1rem;
+            z-index: 2;
+            opacity: 0.55;
+        }
+
+        .ambient-exit:hover,
+        .ambient-exit:focus-visible { opacity: 1; }
+
+        /* Ambient mode: glance, don't open */
+        body.ambient .container {
+            max-width: none;
+            min-height: 100vh;
+            padding: 3.5rem;
+        }
+
+        body.ambient header,
+        body.ambient .connected-section,
+        body.ambient .hero-title,
+        body.ambient .hero-eyebrow,
+        body.ambient #persons-grid,
+        body.ambient #vision-section,
+        body.ambient .details-grid,
+        body.ambient .away-line,
+        body.ambient footer,
+        body.ambient .house-head { display: none !important; }
+
+        body.ambient .ambient-only { display: block; }
+        body.ambient .ambient-exit { display: inline-flex; }
+
+        body.ambient #dashboard {
+            display: grid !important;
+            grid-template-columns: minmax(280px, 380px) 1fr;
+            grid-template-areas: "hero house" "legend house";
+            grid-template-rows: auto 1fr;
+            gap: 0 3.5rem;
+            min-height: calc(100vh - 7rem);
+        }
+
+        body.ambient .hero { margin-bottom: 1.75rem; gap: 0.75rem; }
+
+        body.ambient .ambient-clock {
+            font-family: var(--font-display);
+            font-weight: 500;
+            font-size: clamp(5rem, 11vw, 8.25rem);
+            line-height: 0.9;
+            letter-spacing: -0.05em;
+            color: var(--ink);
+        }
+
+        body.ambient .ambient-date { font-size: 1.25rem; color: var(--muted); }
+        body.ambient .hero-summary { font-size: 1.5rem; color: var(--body); }
+
+        .ambient-people {
+            display: none;
+            grid-area: legend;
+            align-self: end;
+            list-style: none;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        body.ambient .ambient-people { display: flex; }
+
+        .ambient-people li {
+            display: flex;
+            align-items: center;
+            gap: 0.875rem;
+            font-size: 1.35rem;
+            color: var(--body);
+        }
+
+        .ambient-people strong {
+            width: 5rem;
+            font-weight: 500;
+            color: var(--ink);
+        }
+
+        .ambient-people .lamp {
+            --pc: var(--p1);
+            width: 14px;
+            height: 14px;
+            box-sizing: border-box;
+            border-radius: 50%;
+            background: var(--pc);
+            box-shadow: 0 0 12px color-mix(in srgb, var(--pc) 70%, transparent);
+        }
+
+        .ambient-people .lamp.c2 { --pc: var(--p2); }
+        .ambient-people .lamp.c3 { --pc: var(--p3); }
+        .ambient-people .lamp.c4 { --pc: var(--p4); }
+        .ambient-people .lamp.away { background: transparent; border: 2px solid var(--online); box-shadow: none; }
+
+        body.ambient .house-card {
+            grid-area: house;
+            align-self: stretch;
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 0;
+            background: transparent;
+            border: none;
+            padding: 0;
+        }
+
+        body.ambient .rooms-grid { flex: 1; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+        body.ambient .room-tile { border-radius: 26px; padding: 1.25rem 1.5rem; }
+        body.ambient .room-tile .room-name { font-size: 1.1rem; }
+        body.ambient .room-tile .room-status { font-size: 1rem; }
+        body.ambient .room-people .avatar { width: 64px; height: 64px; font-size: 1.4rem; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .avatar.t-guess { animation: none; }
+            .room-tile, .confidence-fill { transition: none; }
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .container {
@@ -744,6 +1090,14 @@
             .vision-grid {
                 grid-template-columns: 1fr;
             }
+
+            body.ambient .container { padding: 1.5rem 1rem; }
+
+            body.ambient #dashboard {
+                grid-template-columns: 1fr;
+                grid-template-areas: "hero" "house" "legend";
+                grid-template-rows: auto;
+            }
         }
     </style>
 </head>
@@ -752,16 +1106,12 @@
         <header>
             <div class="logo">
                 <svg class="logo-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 88" aria-hidden="true" focusable="false">
-                    <rect width="88" height="88" rx="22" fill="#3E5C82"/>
-                    <path d="M14 38 L44 15 L74 38" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-                    <rect x="22" y="40" width="20" height="15" rx="3" fill="#E8B23A"/>
-                    <rect x="46" y="40" width="20" height="15" rx="3" fill="#FFFFFF" opacity="0.18"/>
-                    <rect x="22" y="58" width="20" height="15" rx="3" fill="#FFFFFF" opacity="0.18"/>
-                    <rect x="46" y="58" width="20" height="15" rx="3" fill="#FFFFFF"/>
-                    <circle cx="32" cy="45" r="2.7" fill="#3E5C82"/>
-                    <path d="M27.3 55 a4.7 4.2 0 0 1 9.4 0 Z" fill="#3E5C82"/>
-                    <circle cx="56" cy="63" r="2.7" fill="#3E5C82"/>
-                    <path d="M51.3 73 a4.7 4.2 0 0 1 9.4 0 Z" fill="#3E5C82"/>
+                    <rect width="88" height="88" rx="22" fill="#24211D"/>
+                    <path d="M14 38 L44 15 L74 38" fill="none" stroke="#F4EFE6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <rect x="22" y="40" width="20" height="15" rx="3" fill="#F5B94A"/>
+                    <rect x="46" y="40" width="20" height="15" rx="3" fill="#F4EFE6" opacity="0.14"/>
+                    <rect x="22" y="58" width="20" height="15" rx="3" fill="#F5B94A" opacity="0.55"/>
+                    <rect x="46" y="58" width="20" height="15" rx="3" fill="#F4EFE6" opacity="0.14"/>
                 </svg>
                 <div>
                     <h1>Roomer</h1>
@@ -818,29 +1168,47 @@
                     <span>Connected to Home Assistant</span>
                     <span id="auth-method"></span>
                 </div>
-                <button type="button" class="btn btn-secondary" id="disconnect-btn">
-                    Sign out
-                </button>
+                <div class="connected-actions">
+                    <button type="button" class="btn btn-secondary" id="ambient-btn">
+                        Ambient mode
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="disconnect-btn">
+                        Sign out
+                    </button>
+                </div>
             </div>
         </section>
 
         <!-- Main Dashboard (shown when connected) -->
         <main id="dashboard" style="display: none;">
-            <!-- Person Cards -->
-            <section class="dashboard-grid" id="persons-grid">
-                <!-- Dynamically populated -->
+            <!-- The house in a sentence -->
+            <section class="hero" id="hero">
+                <p class="hero-eyebrow" id="hero-eyebrow">Tonight</p>
+                <div class="ambient-only ambient-clock" id="ambient-clock" aria-hidden="true">--:--</div>
+                <p class="ambient-only ambient-date" id="ambient-date" aria-hidden="true"></p>
+                <h2 class="hero-title" id="hero-title">Waiting for Roomer</h2>
+                <p class="hero-summary" id="hero-summary"></p>
             </section>
 
-            <!-- Room Overview -->
-            <section class="card" style="margin-bottom: 1.5rem;">
-                <div class="card-header">
+            <!-- The house, lit from within -->
+            <section class="card house-card" style="margin-bottom: 1.5rem;">
+                <div class="card-header house-head">
                     <div class="card-title">
-                        <h2 class="card-title">Room overview</h2>
+                        <h2 class="card-title">The house</h2>
                     </div>
                 </div>
                 <div class="rooms-grid" id="rooms-grid">
                     <!-- Dynamically populated -->
                 </div>
+                <div class="away-line" id="away-line"></div>
+            </section>
+
+            <!-- Ambient legend: who is where, at a distance -->
+            <ul class="ambient-people" id="ambient-people" aria-label="Who is where"></ul>
+
+            <!-- People: one card each, tap Why to see the clues -->
+            <section class="dashboard-grid" id="persons-grid">
+                <!-- Dynamically populated -->
             </section>
 
             <!-- Vision Identification -->
@@ -876,7 +1244,7 @@
             </section>
 
             <!-- Two column layout for details -->
-            <div class="dashboard-grid">
+            <div class="dashboard-grid details-grid">
                 <!-- LLM Analysis -->
                 <section class="card">
                     <div class="card-header">
@@ -902,6 +1270,10 @@
                 </section>
             </div>
         </main>
+
+        <button type="button" class="btn btn-secondary ambient-exit" id="ambient-exit">
+            Exit ambient mode
+        </button>
 
         <footer>
             <p>
@@ -1086,17 +1458,11 @@
         // ========== App Config ==========
         const CONFIG = {
             pollInterval: 5000,
-            rooms: ['office', 'living_room', 'bedroom', 'kitchen', 'bathroom', 'entry', 'away'],
-            roomIcons: {
-                office: '\u{1f5a5}\ufe0f',
-                living_room: '\u{1f6cb}\ufe0f',
-                bedroom: '\u{1f6cf}\ufe0f',
-                kitchen: '\u{1f373}',
-                bathroom: '\u{1f6bf}',
-                entry: '\u{1f6aa}',
-                away: '\u{1f3c3}',
-                unknown: '\u2753'
-            }
+            // Rooms shown on the house even when empty. Rooms Roomer reports that
+            // are not listed here are added as they appear.
+            rooms: ['office', 'living_room', 'bedroom', 'kitchen', 'bathroom', 'entry'],
+            awayStates: ['away', 'not_home'],
+            colorKey: 'roomer_person_colors'
         };
 
         // ========== State ==========
@@ -1106,7 +1472,12 @@
             pets: {},
             timeline: [],
             previousRooms: {},
-            lastVisionTime: 0
+            lastVisionTime: 0,
+            extraRooms: [],
+            tileHtml: {},
+            openWhy: new Set(),
+            peopleHtml: '',
+            colors: loadColors()
         };
 
         // ========== DOM ==========
@@ -1115,17 +1486,137 @@
             connectedSection: document.getElementById('connected-section'),
             authMethod: document.getElementById('auth-method'),
             disconnectBtn: document.getElementById('disconnect-btn'),
+            ambientBtn: document.getElementById('ambient-btn'),
+            ambientExit: document.getElementById('ambient-exit'),
             dashboard: document.getElementById('dashboard'),
             signinBtn: document.getElementById('signin-btn'),
             manualTokenForm: document.getElementById('manual-token-form'),
             haStatus: document.getElementById('ha-status'),
             ollamaStatus: document.getElementById('ollama-status'),
             lastUpdate: document.getElementById('last-update'),
+            heroEyebrow: document.getElementById('hero-eyebrow'),
+            heroTitle: document.getElementById('hero-title'),
+            heroSummary: document.getElementById('hero-summary'),
+            ambientClock: document.getElementById('ambient-clock'),
+            ambientDate: document.getElementById('ambient-date'),
+            ambientPeople: document.getElementById('ambient-people'),
             personsGrid: document.getElementById('persons-grid'),
             roomsGrid: document.getElementById('rooms-grid'),
+            awayLine: document.getElementById('away-line'),
             llmResponse: document.getElementById('llm-response'),
             timeline: document.getElementById('timeline')
         };
+
+        // ========== Helpers ==========
+        function esc(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function loadColors() {
+            try { return JSON.parse(localStorage.getItem(CONFIG.colorKey)) || {}; } catch { return {}; }
+        }
+
+        // People have colours: Blue, Ember, Moss, Lilac (1-4). Assigned the first
+        // time someone is seen and kept after that.
+        function colorFor(name) {
+            const key = name.toLowerCase();
+            if (state.colors[key]) return state.colors[key];
+            const used = Object.values(state.colors);
+            let n = 1;
+            while (n <= 4 && used.includes(n)) n++;
+            if (n > 4) n = (used.length % 4) + 1;
+            state.colors[key] = n;
+            try { localStorage.setItem(CONFIG.colorKey, JSON.stringify(state.colors)); } catch { /* private mode */ }
+            return n;
+        }
+
+        function roomLabel(room) {
+            return String(room || '').replace(/_/g, ' ');
+        }
+
+        function isAway(room) {
+            return CONFIG.awayStates.includes(room);
+        }
+
+        function isUnknown(room) {
+            return !room || room === 'unknown' || room === 'unavailable';
+        }
+
+        function formatTime(date) {
+            return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        }
+
+        function initials(name) {
+            return name.split(/\s+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
+        }
+
+        function sentenceCase(text) {
+            return text.charAt(0).toUpperCase() + text.slice(1);
+        }
+
+        function joinNames(names) {
+            if (names.length <= 1) return names.join('');
+            return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+        }
+
+        // Three levels of sure, said plainly. Percentages live one tap down.
+        function confidenceTier(c) {
+            if (c >= 0.8) return { key: 'sure', word: 'Sure', dots: 3 };
+            if (c >= 0.5) return { key: 'likely', word: 'Likely', dots: 2 };
+            return { key: 'guess', word: 'Guessing', dots: 1 };
+        }
+
+        function dotsHtml(filled) {
+            return '<span class="dots" aria-hidden="true">' +
+                [0, 1, 2].map(i => '<i' + (i < filled ? '' : ' class="off"') + '></i>').join('') +
+                '</span>';
+        }
+
+        function whereText(room, tier) {
+            const place = 'the ' + roomLabel(room);
+            if (tier.key === 'sure') return 'In ' + place;
+            return (tier.key === 'likely' ? 'Probably in ' : 'Maybe in ') + place;
+        }
+
+        const SOURCE_TEXT = {
+            device_room: 'a room-tracking device',
+            device_tracker: 'a device tracker',
+            llm: 'the language model'
+        };
+
+        const ICONS = {
+            motion: '<path d="M2 12h3l3-8 4 16 3-8h7"/>',
+            screen: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8"/>',
+            phone: '<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>',
+            light: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V16h8v-1.3A7 7 0 0 0 12 2z"/>',
+            clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+            dot: '<circle cx="12" cy="12" r="3"/>'
+        };
+
+        function clueIcon(text) {
+            const t = text.toLowerCase();
+            let name = 'dot';
+            if (/motion|presence|occupan/.test(t)) name = 'motion';
+            else if (/media|tv|player|computer|\bpc\b|screen/.test(t)) name = 'screen';
+            else if (/tracker|phone|wifi|device|bluetooth|ble\b/.test(t)) name = 'phone';
+            else if (/light|lamp/.test(t)) name = 'light';
+            else if (/habit|routine|usual|time/.test(t)) name = 'clock';
+            return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
+        }
+
+        // Indicators arrive as "motion: living_room_motion" or as plain text.
+        function parseClue(raw) {
+            const text = String(raw);
+            const m = /^([A-Za-z_ ]+):\s*(.+)$/.exec(text);
+            if (!m) return { label: text, id: '' };
+            const label = m[1].replace(/_/g, ' ').trim();
+            return { label: label.charAt(0).toUpperCase() + label.slice(1), id: m[2] };
+        }
 
         // ========== Init ==========
         async function init() {
@@ -1134,15 +1625,54 @@
             el.disconnectBtn.addEventListener('click', handleDisconnect);
             el.manualTokenForm.addEventListener('submit', handleManualToken);
             document.getElementById('trigger-vision-btn').addEventListener('click', triggerVisionIdentification);
+            el.ambientBtn.addEventListener('click', () => setAmbient(true));
+            el.ambientExit.addEventListener('click', () => setAmbient(false));
+            document.addEventListener('keydown', e => {
+                if (e.key === 'Escape' && document.body.classList.contains('ambient')) setAmbient(false);
+            });
+            // Keep which "Why" panels are open across polls
+            el.personsGrid.addEventListener('toggle', e => {
+                const name = e.target.dataset && e.target.dataset.name;
+                if (!name) return;
+                if (e.target.open) state.openWhy.add(name); else state.openWhy.delete(name);
+            }, true);
+            setInterval(updateClock, 15000);
 
             // Try to restore session
             const authenticated = await Auth.init();
             if (authenticated) {
                 showDashboard();
                 startPolling();
+                // A wall tablet can bookmark index.html#ambient
+                if (window.location.hash === '#ambient') setAmbient(true);
             } else {
                 showAuthSection();
             }
+        }
+
+        // Ambient mode: glance, don't open. Always Lamplight, big clock, the house.
+        function setAmbient(on) {
+            document.body.classList.toggle('ambient', on);
+            if (on) document.documentElement.dataset.theme = 'dark';
+            else document.documentElement.removeAttribute('data-theme');
+            try {
+                window.history.replaceState({}, '', window.location.pathname + window.location.search + (on ? '#ambient' : ''));
+            } catch { /* file:// and sandboxed frames */ }
+            updateClock();
+        }
+
+        function partOfDay(hour) {
+            if (hour >= 5 && hour < 12) return 'This morning';
+            if (hour >= 12 && hour < 17) return 'This afternoon';
+            if (hour >= 17 && hour < 21) return 'This evening';
+            return 'Tonight';
+        }
+
+        function updateClock() {
+            const now = new Date();
+            el.heroEyebrow.textContent = partOfDay(now.getHours()) + ' \u00b7 ' + formatTime(now);
+            el.ambientClock.textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/\s?[AP]M$/i, '');
+            el.ambientDate.textContent = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
         }
 
         function showAuthSection() {
@@ -1159,6 +1689,7 @@
             el.authMethod.textContent = Auth.method === 'oauth' ? '(OAuth)' : '(token)';
             el.dashboard.style.display = 'block';
             renderRoomsGrid();
+            updateClock();
         }
 
         function handleDisconnect() {
@@ -1168,6 +1699,8 @@
             state.persons = {};
             state.pets = {};
             state.previousRooms = {};
+            state.peopleHtml = '';
+            setAmbient(false);
             showAuthSection();
         }
 
@@ -1181,10 +1714,16 @@
         }
 
         // ========== Dashboard rendering ==========
+        function allRooms() {
+            return CONFIG.rooms.concat(state.extraRooms);
+        }
+
         function renderRoomsGrid() {
-            el.roomsGrid.innerHTML = CONFIG.rooms.map(room => `
-                <div class="room-tile" data-room="${room}" id="room-${room}">
-                    <div class="room-name">${room.replace('_', ' ')}</div>
+            state.tileHtml = {};
+            el.roomsGrid.innerHTML = allRooms().map(room => `
+                <div class="room-tile" data-room="${esc(room)}" id="room-${esc(room)}">
+                    <div class="room-name">${esc(roomLabel(room))}</div>
+                    <div class="room-people"></div>
                     <div class="room-status">Empty</div>
                 </div>
             `).join('');
@@ -1260,10 +1799,8 @@
                 }
             });
 
-            const roomOccupancy = {};
-            CONFIG.rooms.forEach(room => roomOccupancy[room] = []);
-
             const isFirstLoad = Object.keys(state.previousRooms).length === 0;
+            const found = [];
 
             roomSensors.forEach(sensor => {
                 const name = sensor.attributes.friendly_name?.replace(' Room', '') || 'Unknown';
@@ -1272,24 +1809,25 @@
                 const indicators = sensor.attributes.indicators || [];
                 const rawResponse = sensor.attributes.raw_response || '';
                 const entityType = sensor.attributes.entity_type || 'person';
+                const source = sensor.attributes.source || '';
                 const lastChanged = sensor.last_changed;
                 const picture = sensor.attributes.entity_picture || pictures[name.toLowerCase()] || null;
 
-                const data = { name, room, confidence, indicators, rawResponse, entityType, lastChanged, picture };
+                const data = { name, room, confidence, indicators, rawResponse, entityType, source, lastChanged, picture };
+                found.push(data);
 
+                const label = room ? roomLabel(room) : 'unknown';
                 if (isFirstLoad && room && room !== 'unknown') {
-                    const icon = entityType === 'pet' ? '\u{1f43e}' : '\u{1f464}';
                     addTimelineEvent({
-                        message: `${icon} <strong>${name}</strong> detected in <span class="room-ref">${room?.replace('_', ' ')}</span>`,
+                        message: `<strong>${esc(name)}</strong> detected in <span class="room-ref">${esc(label)}</span>`,
                         type: 'initial_state',
                         entity: name,
                         from: null,
                         to: room
                     });
                 } else if (state.previousRooms[name] && state.previousRooms[name] !== room) {
-                    const icon = entityType === 'pet' ? '\u{1f43e}' : '\u{1f464}';
                     addTimelineEvent({
-                        message: `${icon} <strong>${name}</strong> moved from <span class="room-ref">${state.previousRooms[name]?.replace('_', ' ')}</span> &rarr; <span class="room-ref">${room?.replace('_', ' ')}</span>`,
+                        message: `<strong>${esc(name)}</strong> moved from <span class="room-ref">${esc(roomLabel(state.previousRooms[name]))}</span> &rarr; <span class="room-ref">${esc(label)}</span>`,
                         type: 'room_change',
                         entity: name,
                         from: state.previousRooms[name],
@@ -1303,23 +1841,82 @@
                 } else {
                     state.pets[name] = data;
                 }
-
-                if (roomOccupancy[room]) {
-                    roomOccupancy[room].push(name);
-                }
             });
 
+            // Rooms Roomer reports that aren't on the house yet get a tile
+            const newRooms = found
+                .map(d => d.room)
+                .filter(r => !isAway(r) && !isUnknown(r) && !allRooms().includes(r));
+            if (newRooms.length) {
+                newRooms.forEach(r => { if (!state.extraRooms.includes(r)) state.extraRooms.push(r); });
+                renderRoomsGrid();
+            }
+
+            const everyone = Object.values({ ...state.persons, ...state.pets });
+            renderHero(everyone);
             renderPersonCards();
-            updateRoomTiles(roomOccupancy);
+            updateRoomTiles(everyone);
+            renderAmbientPeople(everyone);
             updateLLMResponse();
             renderTimeline();
+        }
+
+        // The house in a sentence: "Max and Juno are in the living room. Bob is away."
+        function renderHero(everyone) {
+            updateClock();
+            if (everyone.length === 0) {
+                el.heroTitle.textContent = 'Waiting for Roomer';
+                el.heroSummary.textContent = 'Make sure the Roomer integration is configured in Home Assistant.';
+                return;
+            }
+
+            const away = everyone.filter(d => isAway(d.room));
+            const unknown = everyone.filter(d => isUnknown(d.room));
+            const home = everyone.filter(d => !isAway(d.room) && !isUnknown(d.room));
+
+            const counts = [];
+            counts.push(home.length ? `${home.length} home` : 'Nobody’s home');
+            if (away.length) counts.push(`${away.length} away`);
+            if (unknown.length) counts.push(`${unknown.length} unknown`);
+            el.heroTitle.textContent = counts.join(', ');
+
+            const groups = new Map();
+            home.forEach(d => {
+                const tier = confidenceTier(d.confidence);
+                const key = d.room + '|' + tier.key;
+                if (!groups.has(key)) groups.set(key, { room: d.room, tier, names: [] });
+                groups.get(key).names.push(d.name);
+            });
+            const verb = names => (names.length > 1 ? 'are' : 'is');
+            const sentences = [];
+            groups.forEach(g => {
+                const where = 'in the ' + roomLabel(g.room);
+                if (g.tier.key === 'guess') sentences.push(`${joinNames(g.names)} might be ${where}.`);
+                else sentences.push(`${joinNames(g.names)} ${verb(g.names)} ${g.tier.key === 'likely' ? 'probably ' : ''}${where}.`);
+            });
+            if (away.length) sentences.push(`${joinNames(away.map(d => d.name))} ${verb(away)} away.`);
+            if (unknown.length) sentences.push(`I can’t tell where ${joinNames(unknown.map(d => d.name))} ${verb(unknown)}.`);
+            el.heroSummary.textContent = sentences.join(' ');
+        }
+
+        function renderAvatar(d, colorIdx, className) {
+            const cls = `avatar c${colorIdx} ${className}`;
+            if (d.picture) {
+                return `<img class="${cls} picture" src="${esc(d.picture)}" alt="">`;
+            }
+            return `<div class="${cls}" aria-hidden="true">${esc(initials(d.name))}</div>`;
+        }
+
+        function sinceText(d) {
+            const t = d.lastChanged ? new Date(d.lastChanged) : null;
+            return t && !Number.isNaN(t.getTime()) ? 'since ' + formatTime(t) : '';
         }
 
         function renderPersonCards() {
             const allEntities = { ...state.persons, ...state.pets };
 
             if (Object.keys(allEntities).length === 0) {
-                el.personsGrid.innerHTML = `
+                const empty = `
                     <div class="card">
                         <div class="loading">
                             <div class="loading-spinner"></div>
@@ -1330,83 +1927,150 @@
                         </p>
                     </div>
                 `;
+                if (empty !== state.peopleHtml) el.personsGrid.innerHTML = state.peopleHtml = empty;
                 return;
             }
 
-            el.personsGrid.innerHTML = Object.entries(allEntities).map(([name, data], i) => {
+            const html = Object.entries(allEntities).map(([name, data]) => {
                 const isPerson = data.entityType === 'person';
-                const isAway = data.room === 'away' || data.room === 'not_home';
-                const cardClass = (isPerson ? 'person-card' : 'pet-card') + (isAway ? ' away' : '');
-                const confidencePercent = Math.round(data.confidence * 100);
+                const away = isAway(data.room);
+                const unknown = isUnknown(data.room);
+                const cardClass = (isPerson ? 'person-card' : 'pet-card') + (away ? ' away' : '');
+                const colorIdx = colorFor(name);
                 const tier = confidenceTier(data.confidence);
+                const pct = Math.round(data.confidence * 100);
+                const since = sinceText(data);
+
+                const avatar = away
+                    ? renderAvatar(data, colorIdx, 'away')
+                    : renderAvatar(data, colorIdx, unknown ? '' : 't-' + tier.key);
+
+                let where;
+                if (away) where = 'Away';
+                else if (unknown) where = 'Unknown';
+                else where = whereText(data.room, tier);
+
+                const confidence = (away || unknown) ? `
+                        <div class="confidence-line">
+                            ${since ? `<span class="since">${esc(since)}</span>` : ''}
+                        </div>` : `
+                        <div class="confidence-line">
+                            <span class="conf-word">${tier.word}</span>
+                            ${dotsHtml(tier.dots)}
+                            ${since ? `<span class="since">${esc(since)}</span>` : ''}
+                        </div>`;
+
+                let why = '';
+                if (!away && !unknown) {
+                    const clues = (data.indicators || []).map(raw => {
+                        const clue = parseClue(raw);
+                        return `
+                            <li class="indicator">
+                                <span class="clue-icon">${clueIcon(String(raw))}</span>
+                                <span class="clue-text">${esc(clue.label)}${clue.id ? `<span class="clue-id">${esc(clue.id)}</span>` : ''}</span>
+                            </li>`;
+                    }).join('');
+                    const note = SOURCE_TEXT[data.source]
+                        ? `<p class="why-note">Decided by ${SOURCE_TEXT[data.source]}.</p>` : '';
+                    why = `
+                        <details class="why" data-name="${esc(name)}"${state.openWhy.has(name) ? ' open' : ''}>
+                            <summary>Why Roomer thinks so</summary>
+                            <div class="why-body">
+                                <div class="confidence-bar" aria-hidden="true">
+                                    <div class="confidence-fill" style="width: ${pct}%"></div>
+                                </div>
+                                <div class="confidence-text">
+                                    <span>${esc(sentenceCase(roomLabel(data.room)))} ${pct}%</span>
+                                    <span>Other ${100 - pct}%</span>
+                                </div>
+                                ${clues ? `<ul class="clues">${clues}</ul>` : ''}
+                                ${note}
+                            </div>
+                        </details>`;
+                }
 
                 return `
-                    <div class="card ${cardClass}">
+                    <div class="card ${cardClass}" style="--pc: var(--p${colorIdx})">
                         <div class="card-header">
                             <div class="card-title">
-                                ${renderAvatar(name, data.picture, i)}
-                                <span>${name}</span>
+                                ${avatar}
+                                <span>${esc(name)}</span>
                             </div>
                             <span class="card-kind">
                                 ${isPerson ? 'Person' : 'Pet'}
                             </span>
                         </div>
-                        <div class="person-location">
-                            ${data.room?.replace('_', ' ') || 'Unknown'}
-                        </div>
-                        <div class="confidence-bar ${tier.cls}" aria-hidden="true">
-                            <div class="confidence-fill" style="width: ${confidencePercent}%"></div>
-                        </div>
-                        <div class="confidence-text">
-                            <span class="chip ${tier.chip}">${tier.label} &middot; ${confidencePercent}%</span>
-                        </div>
-                        ${data.indicators && data.indicators.length > 0 ? `
-                            <div class="indicators">
-                                ${data.indicators.map(ind => `
-                                    <span class="indicator active">${ind}</span>
-                                `).join('')}
-                            </div>
-                        ` : ''}
+                        <div class="person-location">${esc(where)}</div>
+                        ${confidence}
+                        ${why}
                     </div>
                 `;
             }).join('');
-        }
 
-        function confidenceTier(c) {
-            if (c >= 0.8) return { label: 'Sure', chip: 'chip-sure', cls: 'conf-sure' };
-            if (c >= 0.5) return { label: 'Pretty sure', chip: 'chip-pretty', cls: 'conf-pretty' };
-            return { label: 'Guessing', chip: 'chip-guess', cls: 'conf-guess' };
-        }
-
-        function renderAvatar(name, picture, index) {
-            if (picture) {
-                const src = String(picture).replace(/"/g, '&quot;');
-                return `<img class="avatar picture" src="${src}" alt="">`;
+            // Only touch the DOM when something changed, so open panels stay open
+            if (html !== state.peopleHtml) {
+                el.personsGrid.innerHTML = html;
+                state.peopleHtml = html;
             }
-            const initials = name.split(/\s+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
-            return `<div class="avatar tint-${(index % 3) + 1}" aria-hidden="true">${initials}</div>`;
         }
 
-        function updateRoomTiles(roomOccupancy) {
-            CONFIG.rooms.forEach(room => {
+        function updateRoomTiles(everyone) {
+            const home = everyone.filter(d => !isAway(d.room) && !isUnknown(d.room));
+            allRooms().forEach(room => {
                 const tile = document.getElementById('room-' + room);
                 if (!tile) return;
-                const occupants = roomOccupancy[room] || [];
+                const occupants = home.filter(d => d.room === room);
+                const tiers = occupants.map(d => confidenceTier(d.confidence).key);
                 const isOccupied = occupants.length > 0;
                 tile.classList.toggle('occupied', isOccupied);
-                tile.querySelector('.room-status').textContent =
-                    isOccupied ? occupants.join(', ') : 'Empty';
+                tile.classList.toggle('sure', tiers.includes('sure'));
+                tile.classList.toggle('ghost', isOccupied && tiers.every(t => t === 'guess'));
+
+                const people = occupants.map(d =>
+                    renderAvatar(d, colorFor(d.name), 't-' + confidenceTier(d.confidence).key)
+                ).join('');
+                const status = isOccupied
+                    ? occupants.map(d => `${d.name} · ${confidenceTier(d.confidence).word}`).join(', ')
+                    : 'Empty';
+                const sig = people + status;
+                if (state.tileHtml[room] === sig) return;
+                state.tileHtml[room] = sig;
+                tile.querySelector('.room-people').innerHTML = people;
+                tile.querySelector('.room-status').textContent = status;
             });
+
+            const away = everyone.filter(d => isAway(d.room));
+            el.awayLine.innerHTML = away.map(d => {
+                const since = sinceText(d);
+                return `<span><i class="ring"></i>${esc(d.name)} · away${since ? ' ' + esc(since) : ''}</span>`;
+            }).join('');
+        }
+
+        function renderAmbientPeople(everyone) {
+            el.ambientPeople.innerHTML = everyone.map(d => {
+                const colorIdx = colorFor(d.name);
+                let text;
+                if (isAway(d.room)) {
+                    const since = sinceText(d).replace('since ', '');
+                    text = 'Out' + (since ? ' since ' + esc(since) : '');
+                } else if (isUnknown(d.room)) {
+                    text = 'Unknown';
+                } else {
+                    const tier = confidenceTier(d.confidence);
+                    const room = roomLabel(d.room);
+                    text = esc(sentenceCase(room)) +
+                        (tier.key === 'sure' ? '' : tier.key === 'likely' ? ', likely' : ', maybe');
+                }
+                return `<li><span class="lamp c${colorIdx}${isAway(d.room) ? ' away' : ''}"></span><strong>${esc(d.name)}</strong><span>${text}</span></li>`;
+            }).join('');
         }
 
         function updateLLMResponse() {
             const allEntities = { ...state.persons, ...state.pets };
             const responses = Object.values(allEntities).map(p => {
-                const icon = p.entityType === 'pet' ? '\u{1f43e}' : '\u{1f464}';
-                const roomIcon = CONFIG.roomIcons[p.room] || '\u2753';
                 const rawResp = p.rawResponse || '(no response yet)';
                 const indicatorList = p.indicators?.length > 0 ? p.indicators.join(', ') : 'none';
-                return `${icon} ${p.name} \u2192 ${roomIcon} ${p.room?.replace('_', ' ') || 'unknown'}\n` +
+                return `${p.name} → ${roomLabel(p.room) || 'unknown'}\n` +
                        `   Confidence: ${Math.round(p.confidence * 100)}%\n` +
                        `   LLM said: "${rawResp}"\n` +
                        `   Evidence: ${indicatorList}`;
@@ -1414,7 +2078,7 @@
 
             el.llmResponse.textContent = responses.length > 0
                 ? responses.join('\n\n')
-                : 'Waiting for Roomer data...\n\nMake sure the integration is configured in Home Assistant and Ollama is running.';
+                : 'Waiting for data...\n\nMake sure the integration is configured in Home Assistant and Ollama is running.';
         }
 
         function addTimelineEvent(event) {
@@ -1475,7 +2139,7 @@
                 if (newTime > state.lastVisionTime) {
                     state.lastVisionTime = newTime;
                     addTimelineEvent({
-                        message: '\u{1f4f7} Vision identified <strong>' + identified + '</strong> (' + attrs.confidence + ') - ' + (attrs.description?.substring(0, 50) || '') + '...',
+                        message: 'Vision identified <strong>' + esc(identified) + '</strong> (' + esc(attrs.confidence) + ') - ' + esc(attrs.description?.substring(0, 50) || '') + '...',
                         type: 'vision',
                         entity: identified
                     });

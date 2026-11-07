@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Device-based room presence.** A phone, watch or tag entity assigned to a person or pet that reports a room (Bermuda area sensors, ESPresense, room-assistant, or an `area`/`room` attribute) now places them in that room directly, without asking the LLM. Room names are matched ignoring case, spaces and dashes; an unmatched room is logged once as a warning.
 - `sensor.{room}_occupants` for each room: the number of people in it, with `people`, `pets`, `confidence` and `sources` attributes.
 - `source` attribute on `sensor.{name}_room` (`device_room`, `device_tracker` or `llm`).
+- **Ambient mode** in the standalone dashboard, for a wall tablet: a big clock, a sentence about where everyone is, and the house. Open it with the new **Ambient mode** button or `index.html#ambient`; Esc exits.
+- The standalone dashboard opens with a sentence ("Alice is in the office. Max is probably in the living room.") and a **Why Roomer thinks so** panel on each person with the percentage and the clues.
+- The dashboard card shows a strip of room tiles from the per-room occupants sensors, and opens a person's clues when you tap their row.
+
+### Changed
+- **New look across the card and the standalone dashboard**: two lights, Daylight (light) and Lamplight (dark), with Bricolage Grotesque, Geist and Geist Mono. Occupied rooms are lit, and each person has a colour (Blue, Ember, Moss or Lilac) that goes with their name.
+- Confidence is now said in three plain words with dots: **Sure** (80% and up), **Likely** (50% and up) and **Guessing**. "Pretty sure" is now "Likely", and the percentage moved one tap down.
+- A person who is away shows as "Out since 6:12 PM" on the card, and as a line under the house on the dashboard.
+- `show_indicators` on the card now lists the clues (up to five) when you tap a row, instead of a one-line summary under the room.
+- The dashboard no longer uses emoji for rooms and people.
 
 ### Fixed
 - A device tracker whose state is a room name is no longer treated as "not home".

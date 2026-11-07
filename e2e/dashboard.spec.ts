@@ -343,24 +343,49 @@ test.describe('Dashboard rendering with mocked data', () => {
     await expect(benCard.locator('.person-location')).toContainText('office');
   });
 
-  test('confidence bars render', async ({ page }) => {
-    await expect(page.locator('.confidence-fill').first()).toBeVisible();
+  test('confidence is said in words, with the numbers one tap down', async ({ page }) => {
+    const benCard = page.locator('.person-card').filter({ hasText: 'Ben' });
+    await expect(benCard.locator('.conf-word')).toHaveText('Sure');
+    await expect(benCard.locator('.person-location')).toHaveText('In the office');
 
-    // Ben has 85% confidence
-    const benCard = page.locator('.card').filter({ hasText: 'Ben' });
-    const confText = benCard.locator('.confidence-text');
-    await expect(confText).toContainText('85%');
+    // Alex is at 72%: Likely, and the sentence hedges
+    const alexCard = page.locator('.person-card').filter({ hasText: 'Alex' });
+    await expect(alexCard.locator('.conf-word')).toHaveText('Likely');
+    await expect(alexCard.locator('.person-location')).toHaveText('Probably in the living room');
+
+    // The percentage is inside "Why Roomer thinks so"
+    await expect(benCard.locator('.confidence-text')).not.toBeVisible();
+    await benCard.locator('summary').click();
+    await expect(benCard.locator('.confidence-fill')).toBeVisible();
+    await expect(benCard.locator('.confidence-text')).toContainText('85%');
   });
 
-  test('indicators render as chips', async ({ page }) => {
-    await expect(page.locator('.indicator').first()).toBeVisible();
+  test('clues render under Why Roomer thinks so', async ({ page }) => {
+    const benCard = page.locator('.person-card').filter({ hasText: 'Ben' });
+    await expect(benCard.locator('.indicator').first()).not.toBeVisible();
+    await benCard.locator('summary').click();
 
-    // Ben's indicators
-    const benCard = page.locator('.card').filter({ hasText: 'Ben' });
     const indicators = benCard.locator('.indicator');
     await expect(indicators).toHaveCount(2);
+    await expect(indicators.nth(0)).toBeVisible();
     await expect(indicators.nth(0)).toContainText('PC active');
     await expect(indicators.nth(1)).toContainText('Motion detected');
+  });
+
+  test('an open Why panel stays open across polls', async ({ page }) => {
+    const benCard = page.locator('.person-card').filter({ hasText: 'Ben' });
+    await benCard.locator('summary').click();
+    await expect(benCard.locator('details')).toHaveAttribute('open', '');
+    await page.waitForTimeout(5500); // one poll interval
+    await expect(benCard.locator('details')).toHaveAttribute('open', '');
+  });
+
+  test('hero says who is where in a sentence', async ({ page }) => {
+    await expect(page.locator('#hero-title')).toHaveText('3 home');
+    const summary = page.locator('#hero-summary');
+    await expect(summary).toContainText('Ben is in the office.');
+    await expect(summary).toContainText('Alex is probably in the living room.');
+    await expect(summary).toContainText('Whiskers is probably in the bedroom.');
   });
 
   test('pet card has correct styling', async ({ page }) => {
@@ -387,6 +412,26 @@ test.describe('Dashboard rendering with mocked data', () => {
     const kitchenTile = page.locator('#room-kitchen');
     await expect(kitchenTile).not.toHaveClass(/occupied/);
     await expect(kitchenTile.locator('.room-status')).toContainText('Empty');
+
+    // Everyone in a lit room is drawn as a person-coloured avatar
+    await expect(officeTile.locator('.room-people .avatar')).toHaveCount(1);
+    await expect(kitchenTile.locator('.room-people .avatar')).toHaveCount(0);
+  });
+
+  test('ambient mode shows the clock and the house, and exits again', async ({ page }) => {
+    await page.locator('#ambient-btn').click();
+    await expect(page.locator('body')).toHaveClass(/ambient/);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.locator('#ambient-clock')).toBeVisible();
+    await expect(page.locator('#ambient-people li')).toHaveCount(3);
+    await expect(page.locator('#rooms-grid')).toBeVisible();
+    await expect(page.locator('#persons-grid')).not.toBeVisible();
+    expect(page.url()).toContain('#ambient');
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('body')).not.toHaveClass(/ambient/);
+    await expect(page.locator('#persons-grid')).toBeVisible();
+    await expect(page.locator('html')).not.toHaveAttribute('data-theme', /.*/);
   });
 
   test('LLM analysis panel shows data', async ({ page }) => {
@@ -621,5 +666,57 @@ test.describe('Error state: proxy not configured', () => {
     // Auth section should still show
     await expect(page.locator('#auth-section')).toBeVisible();
     await expect(page.locator('#signin-btn')).toBeEnabled();
+  });
+});
+
+test.describe('Away and unsure people', () => {
+  test('away people leave the house and show when they left', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => {
+      localStorage.removeItem('ha_refresh_token');
+      localStorage.removeItem('ha_manual_token');
+    });
+    await page.route('/api/states', route => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            entity_id: 'sensor.ben_room',
+            state: 'kitchen',
+            attributes: { friendly_name: 'Ben Room', entity_type: 'person', confidence: 0.3, indicators: [] },
+            last_changed: new Date().toISOString(),
+          },
+          {
+            entity_id: 'sensor.bob_room',
+            state: 'away',
+            attributes: { friendly_name: 'Bob Room', entity_type: 'person', confidence: 0.9, indicators: [] },
+            last_changed: new Date().toISOString(),
+          },
+        ]),
+      });
+    });
+    await page.reload();
+    await page.locator('.manual-toggle summary').click();
+    await page.locator('#manual-token').fill('mock-token');
+    await page.locator('#manual-token-form button[type="submit"]').click();
+    await expect(page.locator('#dashboard')).toBeVisible();
+
+    await expect(page.locator('#hero-title')).toHaveText('1 home, 1 away');
+    await expect(page.locator('#hero-summary')).toContainText('Ben might be in the kitchen.');
+    await expect(page.locator('#hero-summary')).toContainText('Bob is away.');
+
+    // A guess is a ghost: dashed tile, dashed avatar
+    const kitchen = page.locator('#room-kitchen');
+    await expect(kitchen).toHaveClass(/ghost/);
+    await expect(kitchen.locator('.avatar')).toHaveClass(/t-guess/);
+
+    // Bob is out of the house, with no confidence and no Why panel
+    await expect(page.locator('#away-line')).toContainText('Bob');
+    const bob = page.locator('.person-card').filter({ hasText: 'Bob' });
+    await expect(bob).toHaveClass(/away/);
+    await expect(bob.locator('.person-location')).toHaveText('Away');
+    await expect(bob.locator('.conf-word')).toHaveCount(0);
+    await expect(bob.locator('details')).toHaveCount(0);
   });
 });
