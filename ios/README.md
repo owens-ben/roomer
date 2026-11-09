@@ -42,11 +42,23 @@ make test
 
 Run `make generate` again after adding or removing files or editing `project.yml`.
 
-## Before the first TestFlight build
+## TestFlight via Xcode Cloud
 
-- In App Store Connect, go to Apps → + and create the app with bundle ID
-  `com.bsowens.roomer`. With automatic signing, Xcode registers the App ID
-  on the first build.
-- Add a 1024×1024 icon to `Roomer/Assets.xcassets/AppIcon.appiconset`.
-- To archive and upload, use Product → Archive in Xcode. Fastlane or Xcode
-  Cloud can be added once the app does something worth shipping.
+Xcode Cloud builds every push that touches `ios/` and sends it to TestFlight.
+`ci_scripts/ci_post_clone.sh` installs XcodeGen, writes the team ID, sets the
+build number from `CI_BUILD_NUMBER`, and generates the project.
+
+One-time setup, in Xcode with the project open (`make open`):
+
+1. **Integrate → Create Workflow…**, pick the Roomer app. If no App Store
+   Connect record exists yet, Xcode offers to create it (bundle ID
+   `com.bsowens.roomer`).
+2. Grant Xcode Cloud access to the `owens-ben/roomer` GitHub repo when asked.
+3. Edit the workflow:
+   - **Start Conditions:** Branch Changes → Any Branch; under Files and
+     Folders, start only when files in `ios/` change.
+   - **Actions:** Archive – iOS, Deployment Preparation: TestFlight (Internal Testing Only).
+   - **Post-Actions:** TestFlight Internal Testing → add a group with yourself.
+4. Install the TestFlight app on your iPhone and accept the invite.
+
+A build shows up in TestFlight about 10–20 minutes after a push.
