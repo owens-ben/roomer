@@ -1,0 +1,3 @@
+// Shared build settings. Per-machine signing lives in Signing.local.xcconfig
+// (gitignored). Copy Signing.local.xcconfig.example to create it.
+#include? "Signing.local.xcconfig"
