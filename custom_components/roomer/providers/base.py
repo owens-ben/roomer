@@ -7,7 +7,7 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -26,7 +26,15 @@ class PresenceGuess:
     confidence: float  # 0.0 to 1.0
     raw_response: str
     indicators: list[str]  # What signals led to this guess
-    source: str = "llm"  # Source of prediction: llm, device_tracker, habit, sensor
+    source: str = "llm"  # llm, sensor, device_room, device_tracker, prior, sticky, manual_correction
+    last_changed_reason: str = ""  # Why the room last changed (set by the coordinator)
+    # Other rooms raised just as much, e.g. by one camera that sees two rooms
+    alternate_rooms: list[str] = field(default_factory=list)
+
+    @property
+    def rooms(self) -> list[str]:
+        """The room plus any alternate rooms."""
+        return [self.room, *self.alternate_rooms]
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -36,6 +44,8 @@ class PresenceGuess:
             "raw_response": self.raw_response,
             "indicators": self.indicators,
             "source": self.source,
+            "last_changed_reason": self.last_changed_reason,
+            "alternate_rooms": self.alternate_rooms,
         }
 
 

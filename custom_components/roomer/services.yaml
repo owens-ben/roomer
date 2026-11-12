@@ -14,7 +14,10 @@ refresh:
 
 correct_room:
   name: Correct Room
-  description: Manually correct a person's room location (helps the system learn)
+  description: >-
+    Manually correct a person's or pet's room (helps the system learn). The person is found from the
+    sensor's Roomer configuration, so any Roomer room sensor works. The room must be one of the configured
+    rooms, or away or unknown, otherwise the call fails with an error.
   fields:
     entity_id:
       name: Entity ID
@@ -27,14 +30,14 @@ correct_room:
           integration: roomer
     room:
       name: Room
-      description: The correct room name
+      description: A configured room (as shown in the Roomer setup), or away or unknown
       required: true
       example: office
       selector:
         text:
     confidence:
       name: Confidence
-      description: Confidence level (0.0 to 1.0)
+      description: Confidence level (0.0 to 1.0). Corrections below 0.7 are not learned.
       required: false
       default: 1.0
       example: 1.0

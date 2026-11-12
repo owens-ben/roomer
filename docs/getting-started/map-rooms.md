@@ -18,7 +18,8 @@ To change mappings later, or to assign devices to people, use Roomer's options:
 1. Go to **Settings → Devices & services → Roomer**.
 2. Select **Configure**.
 3. Choose a section from the menu: **General Settings**, **Room Entity
-   Mapping**, **Person Device Ownership** or **Confidence Weights**.
+   Mapping**, **Entity Covering Several Rooms**, **Room Areas**, **Person
+   Device Ownership** or **Confidence Weights**.
 
 !!! example "Screenshot needed: options-menu.png"
     The "Roomer Options" menu showing the four choices: General Settings, Room Entity Mapping, Person Device Ownership, Confidence Weights.
@@ -30,20 +31,25 @@ become unavailable while it restarts with the new settings.
 
 ## How Roomer reads an entity
 
-When you map an entity to a room, Roomer decides what **type** of clue it is
-based on words in its entity ID. Roomer checks these rules in order and uses the
-first one that matches:
+When you map an entity to a room, Roomer decides what **type** of clue it is.
+It looks at the entity's domain and **device class** first (so a
+`binary_sensor` with the `motion`, `occupancy` or `presence` device class is
+motion, whatever it is called, which covers mmWave presence sensors and
+sensors named after a model number), then at words in its entity ID. Roomer
+checks these rules in order and uses the first one that matches:
 
-| If the entity ID contains… | Type | Default weight |
+| If… | Type | Default weight |
 |---|---|---|
-| `motion` or `occupancy` | motion | 60% |
-| `media_player` or `tv` | media | 80% |
-| `light.` (it's a light) | light | 35% |
-| `pc`, `computer` or `desktop` | computer | 85% |
-| `camera`, `person` or `animal` | camera | 95% |
-| `door`, `window` or `contact` | door | 40% |
-| `temperature` or `humidity` | climate | 20% |
-| `device_tracker` | presence | 70% |
+| it is a `light.`, `media_player.`, `camera.` or `device_tracker.` entity | light, media, camera or presence | 35%, 80%, 95%, 70% |
+| a binary sensor's name has the word `person`, `animal`, `pet`, `human`, `dog` or `cat` | camera | 95% |
+| its device class is `motion`, `occupancy`, `presence` or `moving` | motion | 60% |
+| its device class is `door`, `window`, `garage_door` or `opening` | door | 40% |
+| the entity ID contains `motion` or `occupancy`, or the word `presence` | motion | 60% |
+| the entity ID contains `media_player`, or the word `tv` | media | 80% |
+| the entity ID contains the word `pc`, or `computer` or `desktop` | computer | 85% |
+| the entity ID contains `camera`, `person` or `animal` | camera | 95% |
+| the entity ID contains `door`, `window` or `contact` | door | 40% |
+| the entity ID contains `temperature` or `humidity` | climate | 20% |
 | anything else | appliance | 50% |
 
 The weight is how much the clue counts when Roomer
@@ -214,7 +220,7 @@ Open `sensor.alice_room` in **Settings → Devices & services → Entities**, or
 
 - `confidence`: from 0 to 1. For example, `0.82` means 82%.
 - `indicators`: the clues Roomer used, such as `computer: alice_pc` or `device: alice_phone_area in office`.
-- `source`: where the answer came from. `device_room` means one of their devices reported the room, `device_tracker` means away, and `llm` means Roomer worked it out from sensors.
+- `source`: where the answer came from. `device_room` means one of their devices reported the room, `device_tracker` means away, `sensor` means an active mapped entity decided it, `sticky` means nothing is active so they are still where they were last seen, and `prior` means only a low-confidence time-of-day guess. The [entities page](../using/entities.md) lists every attribute, including `last_changed_reason` and `room_area_id`.
 
 If a device you expected isn't listed, check that it's mapped to a room and is
 currently active.
@@ -239,3 +245,38 @@ Most people can leave these alone.
 
 Next: learn about the [entities Roomer creates](../using/entities.md), or start
 building [automations](../using/automations.md).
+
+## One entity, several rooms
+
+Some sensors see more than one room. A camera in the kitchen may also watch the
+living room. Map such an entity with **Entity Covering Several Rooms** in the
+options (not the per-room pickers, though those work too):
+
+| Field | What it does |
+|---|---|
+| **Entity** | The sensor, for example `binary_sensor.reolink_person` |
+| **Rooms it covers** | Every room it can see. Leave empty to remove the entity from all rooms. |
+| **What it detects** | `People and animals`, `People only` or `Animals only`. The default works it out from the name (`person`, `human` → people; `animal`, `pet`, `dog`, `cat` → animals). |
+| **Split its weight between the rooms** | Off (default): each room gets the full evidence, so a person detection raises both rooms equally. On: the rooms share it, so each counts for less. |
+
+When the entity is active and nothing else decides between its rooms, Roomer keeps
+the person in the room they were in before. The other room is listed in the
+`candidate_rooms` attribute, and both rooms' occupants sensors and
+`binary_sensor.<name>_in_<room>` show them. Other evidence still wins: a TV
+playing in the living room settles it for the living room.
+
+A person detection only counts for **people** and an animal detection only for
+**pets**. A mapped entity is stored under each of its rooms as
+`{entity_id, hint_type, weight, detects}`, so you can also edit that in the
+config entry's options. `weight` is a share from 0 to 1 and `detects` is
+`person`, `animal` or `any`. Existing single-room mappings are migrated
+automatically and behave as before.
+
+## Room areas
+
+**Room Areas** ties each of your rooms to a Home Assistant area. Roomer shows the
+area's id in the `room_area_id` attribute of the room sensors, the occupants
+sensors and the room binary sensors, so a floor plan or dashboard can place
+rooms on areas without guessing from names. A room you leave blank is matched to
+an area with the same name (ignoring case, spaces and dashes) when there is one;
+otherwise `room_area_id` is `null`. `away` and `unknown` never have an area.

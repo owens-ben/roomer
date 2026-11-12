@@ -39,9 +39,11 @@ Sets a person's room sensor to the room you give and teaches Roomer's [habit lea
 
 | Field | Required | Type | Default | Description |
 |---|---|---|---|---|
-| `entity_id` | yes | entity ID | | The person's room sensor, such as `sensor.alice_room` |
-| `room` | yes | text | | The correct room, such as `office` |
+| `entity_id` | yes | entity ID | | A Roomer room sensor (`sensor.<name>_room`), such as `sensor.alice_room`. It can have any entity ID: Roomer finds the person or pet from the sensor's registry entry. |
+| `room` | yes | text | | One of your configured rooms, or `away` or `unknown`. Case, spaces and dashes are ignored (`Living Room` is `living_room`). |
 | `confidence` | no | number 0.0–1.0 | `1.0` | How sure you are. Habits are only learned from values of 0.7 or more. |
+
+The call fails with an error, and changes nothing, when `entity_id` is not a Roomer room sensor or `room` is not a configured room.
 
 ```yaml
 service: roomer.correct_room
@@ -52,8 +54,8 @@ data:
 
 Things to know:
 
-- **The sensor shows your room only until the next update.** At the next regular update (every 10 seconds by default), Roomer recalculates. The lasting effect is the learned habit, which nudges future guesses at the same time of day.
-- **The person's name comes from the entity ID.** `sensor.alice_room` becomes `Alice` and `sensor.mary_jane_room` becomes `Mary Jane`. Habits are stored under that name, so the correction only counts if your configured name has the same capitalisation (for example `Alice`, not `alice`).
+- **A correction holds while nothing contradicts it.** At the next regular update Roomer recalculates. If no mapped entity is active, the person stays in the room you set (`source: sticky`, confidence fading over time). An active clue elsewhere takes over. The lasting effect is the learned habit, which nudges future guesses at the same time of day.
+- **The person's name comes from Roomer's configuration, not from the entity ID.** The sensor's registry entry says whose it is, so `sensor.ben_room_3` or a renamed sensor still teaches the habit to `Ben`. If the entity has no registry entry, Roomer matches `sensor.<name>_room` against your configured names. When Roomer isn't set up at all, it falls back to the old behaviour of turning `sensor.mary_jane_room` into `Mary Jane`.
 - The habit is saved to disk straight away.
 
 ### `roomer.get_history`

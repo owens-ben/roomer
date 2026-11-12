@@ -46,6 +46,10 @@ const SOURCE_LABELS = {
   device_room: 'a room-tracking device',
   device_tracker: 'a device tracker',
   llm: 'the language model',
+  sensor: 'the active sensors',
+  sticky: 'where they were last seen',
+  prior: 'a time-of-day guess',
+  manual_correction: 'your correction',
 };
 const FONT_LINK_ID = 'roomer-card-fonts';
 const FONT_HREF =

@@ -120,7 +120,7 @@ A few details that are easy to miss when reading the code:
 }
 ```
 
-`PresenceGuess` (from `providers/base.py`) has `room`, `confidence`, `raw_response`, `indicators` and `source`. After `_process_entity`, `indicators` holds up to five `"hint_type: entity"` strings plus the combiner's explanation.
+`PresenceGuess` (from `providers/base.py`) has `room`, `confidence`, `raw_response`, `indicators`, `source`, `last_changed_reason` (set by the coordinator) and `alternate_rooms` (other rooms raised equally by a multi-room entity). After `_process_entity`, `indicators` holds up to five `"hint_type: entity"` strings plus the combiner's explanation.
 
 ## How entities consume coordinator data
 

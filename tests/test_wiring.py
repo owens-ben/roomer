@@ -34,6 +34,7 @@ def _make_entry():
 def _make_hass():
     hass = MagicMock()
     hass.data = {}
+    hass.async_add_executor_job = AsyncMock(side_effect=lambda func, *args: func(*args))
     hass.services.has_service = MagicMock(return_value=False)
     hass.config_entries.async_forward_entry_setups = AsyncMock()
     hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
@@ -72,6 +73,8 @@ def _bare_coordinator(hass, tmp_path):
     coordinator = LLMPresenceCoordinator.__new__(LLMPresenceCoordinator)
     coordinator.hass = hass
     coordinator._previous_rooms = {}
+    coordinator._last_clue = {}
+    coordinator._reason_state = {}
     coordinator.event_logger = MagicMock()
     coordinator.event_logger.async_log_room_transition = AsyncMock()
     coordinator.history_tracker = HistoryTracker(config_path=tmp_path)

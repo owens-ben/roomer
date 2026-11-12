@@ -64,6 +64,8 @@
         "menu_options": {
           "general": "General Settings",
           "room_entities": "Room Entity Mapping",
+          "multi_room": "Entity Covering Several Rooms",
+          "room_areas": "Room Areas",
           "person_devices": "Person Device Ownership",
           "confidence_weights": "Confidence Weights"
         }
@@ -79,6 +81,31 @@
       "room_entities": {
         "title": "Room Entity Mapping",
         "description": "Assign sensors and devices to each room. Custom rooms are shown by their room name.",
+        "data": {
+          "office": "Office",
+          "living_room": "Living room",
+          "bedroom": "Bedroom",
+          "kitchen": "Kitchen",
+          "bathroom": "Bathroom",
+          "entry": "Entry"
+        }
+      },
+      "multi_room": {
+        "title": "Entity Covering Several Rooms",
+        "description": "Map one entity to several rooms, for example a camera that sees both the kitchen and the living room. Its detections then raise every room you pick instead of just one. Leave Rooms empty to remove the entity from all rooms. Roomer picks person or animal detections from the entity's name unless you choose.",
+        "data": {
+          "entity_id": "Entity",
+          "rooms": "Rooms it covers",
+          "detects": "What it detects",
+          "split_weight": "Split its weight between the rooms"
+        },
+        "data_description": {
+          "split_weight": "Off: each room gets the full evidence. On: the rooms share it, so each counts for less."
+        }
+      },
+      "room_areas": {
+        "title": "Room Areas",
+        "description": "Optionally tie each room to a Home Assistant area. Roomer exposes it as the room_area_id attribute so a dashboard can map rooms without guessing. A room with no area here is matched to an area of the same name when there is one.",
         "data": {
           "office": "Office",
           "living_room": "Living room",
@@ -107,6 +134,19 @@
           "weight_llm_reasoning": "LLM reasoning",
           "weight_habit": "Learned patterns"
         }
+      }
+    },
+    "error": {
+      "entity_not_found": "That entity doesn't exist in Home Assistant."
+    }
+  },
+  "selector": {
+    "detects": {
+      "options": {
+        "auto": "Work it out from its name",
+        "any": "People and animals",
+        "person": "People only",
+        "animal": "Animals only"
       }
     }
   }
