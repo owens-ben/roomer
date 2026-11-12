@@ -12,7 +12,7 @@ Go to **Developer Tools → States** and search for `sensor.alice_room` (use you
 |---|---|
 | `indicators` | Which mapped sensors were active (`motion: hallway_motion`, `computer: alice_pc`, …), followed by a summary of the strongest signals and the AI's pick (`LLM: office`). `No signals available` means nothing was active and the AI gave no usable answer. Entries ending in `(fallback)` mean the AI couldn't be reached. |
 | `raw_response` | The AI model's exact reply, for example `ROOM: office`. `Device tracker indicates not home` means the person is away by device tracker and the AI was skipped. An error message (or an empty value) together with a low confidence means the AI request failed. |
-| `confidence` | 0.0 to 1.0. Values of 0.3 to 0.6 are normal; see [Accuracy & limits](accuracy.md). A sudden drop for everyone usually means the AI is unreachable. |
+| `confidence` | 0.0 to 1.0. Around 0.7 to 0.95 when sensors and the AI agree, around 0.5 or lower when evidence is thin or split; see [Accuracy & limits](accuracy.md). A sudden drop for everyone usually means the AI is unreachable. |
 
 !!! note "There is no `source` or `reasoning` attribute"
     Some older docs mention `source`, `reasoning` or `last_updated` attributes. Roomer doesn't expose those in the current version. Use `indicators` and `raw_response` instead.
@@ -119,7 +119,7 @@ Roomer writes every decision, with the sensor states it saw, to `/config/roomer_
 
     **What you'll see**
 
-    - Everyone's confidence drops sharply, often to around 0.05 to 0.3.
+    - Everyone's confidence drops, most of all for people with no active sensors (to around 0.15 to 0.3, when the fallback guess is the only evidence).
     - People land in the living room (or your first room), in the room of an active PC, or in the room of a playing media player. `indicators` may contain entries like `PC active (fallback)`.
     - `raw_response` contains an error such as `Cannot connect to host …`, or is empty for a timeout.
     - The logs show `Ollama request failed for …` and `Fallback guess for …`.

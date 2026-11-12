@@ -23,42 +23,51 @@ blueprint:
         object:
     min_confidence:
       name: Minimum Confidence
-      description: Minimum confidence level to trigger transfer (0.0-1.0)
-      default: 0.6
+      description: >-
+        Minimum Roomer confidence (0.0-1.0) in the new room before moving
+        the music. 0.7 needs motion plus the LLM agreeing (or one strong
+        signal such as a camera); 0.6 also accepts a single motion sensor.
+      default: 0.7
       selector:
         number:
           min: 0
           max: 1
-          step: 0.1
+          step: 0.05
+
+variables:
+  room_map: !input room_speaker_map
+  min_confidence: !input min_confidence
 
 trigger:
+  # to: null fires on room changes only, not on confidence/attribute updates
   - platform: state
     entity_id: !input person_sensor
+    to: null
 
 condition:
   - condition: template
     value_template: >
       {{ trigger.to_state.state != trigger.from_state.state and
-         trigger.to_state.attributes.confidence | default(0) >= min_confidence }}
+         trigger.to_state.attributes.confidence | default(0) | float(0)
+         >= min_confidence | float(0) }}
 
 action:
   - variables:
-      room_map: !input room_speaker_map
       new_room: "{{ trigger.to_state.state }}"
       old_room: "{{ trigger.from_state.state }}"
       new_speaker: "{{ room_map.get(new_room, '') }}"
       old_speaker: "{{ room_map.get(old_room, '') }}"
-  
+
   - condition: template
     value_template: "{{ new_speaker != '' and old_speaker != '' }}"
-  
+
   - service: media_player.media_pause
     target:
       entity_id: "{{ old_speaker }}"
-  
+
   - delay:
       seconds: 1
-  
+
   - service: media_player.media_play
     target:
       entity_id: "{{ new_speaker }}"

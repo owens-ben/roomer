@@ -1,16 +1,28 @@
 blueprint:
   name: Roomer - Goodbye Routine
   description: >-
-    Run actions when someone leaves home. Turn off lights, lock doors,
-    set thermostat to away mode, etc.
+    Run actions when people leave home: turn off lights, lock doors,
+    set the thermostat to away, arm the alarm. Triggers when a Roomer room
+    sensor changes from a room to "away", and runs only if every selected
+    person is still away after the delay.
   domain: automation
   author: Roomer
   source_url: https://github.com/owens-ben/Roomer/blob/main/blueprints/goodbye_routine.yaml
   input:
+    person_sensors:
+      name: Person Room Sensors
+      description: >-
+        Roomer room sensors to watch. The routine runs once all of them
+        are "away".
+      selector:
+        entity:
+          domain: sensor
+          integration: roomer
+          multiple: true
     turn_off_lights:
       name: Turn Off Lights
       description: Lights to turn off when leaving
-      default: []
+      default: {}
       selector:
         target:
           entity:
@@ -18,7 +30,7 @@ blueprint:
     lock_doors:
       name: Lock Doors
       description: Locks to engage when leaving
-      default: []
+      default: {}
       selector:
         target:
           entity:
@@ -56,38 +68,65 @@ blueprint:
           max: 30
           unit_of_measurement: "minutes"
 
+variables:
+  person_sensors: !input person_sensors
+  turn_off_lights: !input turn_off_lights
+  lock_doors: !input lock_doors
+  arm_alarm: !input arm_alarm
+  set_climate_away: !input set_climate_away
+
 trigger:
-  - platform: event
-    event_type: roomer_person_left
+  - platform: state
+    entity_id: !input person_sensors
+    to: away
+    not_from:
+      - unknown
+      - unavailable
+
+mode: restart
 
 action:
+  # Wait in case they come straight back
   - delay:
       minutes: !input delay_minutes
-  
+
+  - condition: template
+    value_template: >
+      {{ person_sensors | select('is_state', 'away') | list | length
+         == person_sensors | length }}
+
   # Turn off lights
-  - condition: template
-    value_template: "{{ turn_off_lights | length > 0 }}"
-  - service: light.turn_off
-    target: !input turn_off_lights
-  
+  - if:
+      - condition: template
+        value_template: "{{ turn_off_lights | length > 0 }}"
+    then:
+      - service: light.turn_off
+        target: !input turn_off_lights
+
   # Lock doors
-  - condition: template
-    value_template: "{{ lock_doors | length > 0 }}"
-  - service: lock.lock
-    target: !input lock_doors
-  
+  - if:
+      - condition: template
+        value_template: "{{ lock_doors | length > 0 }}"
+    then:
+      - service: lock.lock
+        target: !input lock_doors
+
   # Set climate away
-  - condition: template
-    value_template: "{{ set_climate_away != '' }}"
-  - service: climate.set_temperature
-    target:
-      entity_id: !input set_climate_away
-    data:
-      temperature: !input away_temperature
-  
+  - if:
+      - condition: template
+        value_template: "{{ set_climate_away != '' }}"
+    then:
+      - service: climate.set_temperature
+        target:
+          entity_id: "{{ set_climate_away }}"
+        data:
+          temperature: !input away_temperature
+
   # Arm alarm (if configured)
-  - condition: template
-    value_template: "{{ arm_alarm != '' }}"
-  - service: alarm_control_panel.alarm_arm_away
-    target:
-      entity_id: !input arm_alarm
+  - if:
+      - condition: template
+        value_template: "{{ arm_alarm != '' }}"
+    then:
+      - service: alarm_control_panel.alarm_arm_away
+        target:
+          entity_id: "{{ arm_alarm }}"

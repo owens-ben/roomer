@@ -21,9 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A person who is away shows as "Out since 6:12 PM" on the card, and as a line under the house on the dashboard.
 - `show_indicators` on the card now lists the clues (up to five) when you tap a row, instead of a one-line summary under the room.
 - The dashboard no longer uses emoji for rooms and people.
+- **Confidence scores are higher and mean more.** The confidence combiner now combines agreeing signals (noisy-OR) instead of dividing their sum by 2.60, so motion plus the AI scores 0.74 instead of 0.37, and conflicting rooms lower the winner's confidence. Raise any `confidence` thresholds you lowered to cope with the old values (`0.6` to `0.7` is a good start). See the Accuracy & limits docs.
+- The Ollama prompt now asks the model for a `CONFIDENCE:` value; `CONFIDENCE: 85` and `85%` are read as 0.85.
+- **BREAKING (blueprints):** Welcome Home Lights and Goodbye Routine trigger on the room sensor changing from or to `away` instead of the `roomer_person_arrived` / `roomer_person_left` events. Goodbye Routine takes a list of room sensors and runs only once all of them are still `away` after the delay. Re-create automations made from it.
+- Follow Me Music's default minimum confidence is now 0.7.
 
 ### Fixed
 - A device tracker whose state is a room name is no longer treated as "not home".
+- Habits were rarely learned, because correct answers almost never reached the 0.7 learning threshold.
+- The confidence combiner's "multiple signals agree" bonus could never apply.
+- Blueprints used `!input` inside templates without a `variables:` block, so their template conditions (room, confidence, optional inputs) never worked.
+- Goodbye Routine stopped at the first optional input left empty (for example no lights), and failed validation when lights, locks, climate or alarm were left empty.
+- Welcome Home Lights' "only after dark" check could never pass (`after: sunset` and `before: sunrise` in one condition); it now uses `sun.sun` being below the horizon.
+- `automations/vision_on_motion.yaml` referenced `sensor.llm_vision_last_identification`; it is `sensor.vision_last_identification`.
 
 ## [0.3.0] - 2026-10-21
 

@@ -39,13 +39,15 @@ Most smart-home sensors tell you that **someone** is in a room, not **who**:
 
 ## What `confidence` means
 
-Every room sensor has a `confidence` attribute between 0.0 and 1.0. Treat it as a **strength-of-evidence score**: higher means more and stronger signals agree on that room. It is **not** a calibrated probability. A confidence of 0.5 does not mean "right half the time", and a value of 0.4 is often correct.
+Every room sensor has a `confidence` attribute between 0.0 and 1.0. Treat it as a **strength-of-evidence score**: higher means more and stronger signals agree on that room. It is **not** a calibrated probability. A confidence of 0.5 does not mean "right half the time"; it means the evidence is thin or mixed.
 
 ### How it's calculated
 
 After the AI model makes its guess, a step called the **confidence combiner** gives every room a score:
 
-1. **Each active sensor mapped to a room adds its weight to that room.** The default weights are:
+Each weight below is read as "how likely this one signal is to be right on its own". The combiner works like this:
+
+1. **Each active sensor mapped to a room is evidence for that room, at its weight.** The default weights are:
 
     | Signal type | Default weight |
     |---|---|
@@ -61,34 +63,44 @@ After the AI model makes its guess, a step called the **confidence combiner** gi
 
     A sensor counts as "active" when its state is `on`, `home`, `detected`, `playing`, `open` or `occupied`. A media player counts when it is `playing`, `paused` or `on`.
 
-2. **A person's own devices count again, for that person only.** If a device listed under a person's devices (**Configure → Person Device Ownership**) is active, *and* it is also mapped to a room, that room gets an extra boost at the `computer` weight (0.85) for that person. This is how Roomer tells people apart.
+    Only the strongest signal **of each type** counts per room. Three lights on in the living room count as one light (0.35), not three, because they usually go on together and aren't independent evidence.
 
-3. **The AI's pick adds** its confidence × `llm_reasoning` weight (0.50). The model is asked only for a room name, so its "confidence" is usually a default of 0.7, or 0.6 if it answered loosely. In practice the AI adds about 0.30 to 0.35 to the room it chose.
+2. **A person's own devices count again, for that person only.** If a device listed under a person's devices (**Configure → Person Device Ownership**) is active, *and* it is also mapped to a room, that room gets a second, separate piece of evidence at the `computer` weight (0.85) for that person. This is how Roomer tells people apart.
 
-4. **Learned habits add** the habit's confidence × `habit` weight (0.35) to the room the person is usually in at this time of day, once a habit has been learned.
+3. **The AI's pick is evidence** at its confidence × `llm_reasoning` weight (0.50). The model is asked for a room and a `CONFIDENCE:` between 0 and 1 (Ollama, OpenAI and Anthropic all use this format). If it leaves the confidence out, 0.7 is assumed. So the AI contributes between 0 and 0.5, usually 0.3 to 0.45. The AI sees the same sensors, so it is deliberately the weakest vote.
 
-5. **The room with the highest total wins.** Its total is divided by the sum of the three largest weights (0.95 + 0.85 + 0.80 = 2.60 by default) and capped at 1.0. That is the `confidence` you see.
+4. **Learned habits are evidence** at the habit's confidence × `habit` weight (0.35) for the room the person is usually in at this time of day, once a habit has been learned.
 
-Because of that last step, you only get a high confidence when several strong signals stack up on the same room:
+5. **Agreeing evidence is combined, not added.** For each room, Roomer works out the chance that *every* signal for it is wrong and takes the opposite: `support = 1 − (1 − w₁) × (1 − w₂) × …`. One motion sensor gives 0.60; motion plus an AI vote of 0.35 gives 1 − 0.40 × 0.65 = 0.74. Each extra agreeing signal pushes the support closer to 1.0, but it never reaches it.
 
-| Situation (person's room) | Score | Confidence |
+6. **The room with the most support wins, discounted by the runner-up.** Its confidence is `support × (1 − 0.5 × runner-up support)`. A competing room with no signals costs nothing; a strong competing room roughly halves the winner's confidence at most. The penalty is only half because, in a shared home, a signal in another room is often just someone else.
+
+Some typical results with the default weights, assuming the AI answers with 0.7 confidence (a vote of 0.35):
+
+| Situation (person's room) | Evidence | Confidence |
 |---|---|---|
-| AI guess only, no active sensors | 0.35 | **0.13** |
-| Motion + AI agree | 0.60 + 0.35 = 0.95 | **0.37** |
-| TV playing + AI agree | 0.80 + 0.35 = 1.15 | **0.44** |
-| Motion + light + AI agree | 0.60 + 0.35 + 0.35 = 1.30 | **0.50** |
-| Their own PC on (mapped as `computer` and owned) + AI agree | 0.85 + 0.85 + 0.35 = 2.05 | **0.79** |
+| AI guess only, no active sensors | 0.35 | **0.35** |
+| Light + AI agree | 1 − 0.65 × 0.65 | **0.58** |
+| Motion + AI agree | 1 − 0.40 × 0.65 | **0.74** |
+| Motion + light + AI agree | 1 − 0.40 × 0.65 × 0.65 | **0.83** |
+| TV playing + AI agree | 1 − 0.20 × 0.65 | **0.87** |
+| Their own PC on (mapped as `computer` and owned) + AI agree | 1 − 0.15 × 0.15 × 0.65 | **0.99** |
+| Motion + AI in the kitchen, a light on in the living room | 0.74 × (1 − 0.5 × 0.35) | **0.61** |
 | Device tracker says not home | (AI skipped) | **0.95**, state `away` |
 
-So a correct answer usually sits between 0.3 and 0.6. Keep that in mind before adding `confidence > 0.8` conditions to automations.
+So a confident, correct answer usually sits between 0.7 and 0.95, and values around 0.5 mean the evidence is thin or split between rooms. A `confidence >= 0.7` condition in an automation means "at least a motion sensor and the AI agree, or one strong signal such as a camera, TV or PC".
+
+??? note "Upgrading? The old formula scored much lower"
+    Earlier versions added the weights up and divided by the sum of the three largest weights (0.95 + 0.85 + 0.80 = 2.60). Motion plus the AI came out at 0.37 and a correct answer usually scored 0.3 to 0.6. If you lowered `confidence` thresholds in your automations to cope with that (for example to `0.4`), raise them again: `0.6` to `0.7` is a sensible starting point now.
 
 !!! note "When the AI server is down"
     If Roomer can't reach the AI model, it falls back to simple rules: an active PC means its room, otherwise a playing media player means its room, otherwise the living room (or your first room). That guess is weak (0.3 to 0.55 before combining), so confidence drops sharply. A sudden fall in confidence across everyone usually means the AI server is unreachable. See [Troubleshooting](troubleshooting.md).
 
 !!! info "For the curious"
-    - The combiner is meant to add a +0.1 bonus when several strong signals agree. As written, that bonus effectively never applies in the current version.
+    - Agreement is rewarded by the combination itself, so there is no separate bonus. When two or more strong signals (weight 0.5 or more) agree, "Multiple signals agree" is added to the `indicators` attribute.
+    - No single signal can make a room certain: each one is capped at 0.99, even if you set its weight to 100%.
     - Habits are learned only from decisions with confidence of 0.7 or more, in two-hour time-of-day slots. In the current version they are kept in memory and start over when Home Assistant restarts.
-    - The code is in `custom_components/roomer/habits.py` (`ConfidenceCombiner`). See [Architecture](../contributing/architecture.md).
+    - The code is in `custom_components/roomer/habits.py` (`ConfidenceCombiner`), and `tests/test_confidence_scoring.py` has worked examples. See [Architecture](../contributing/architecture.md).
 
 You can change the weights under **Settings → Devices & services → Roomer → Configure → Confidence Weights**. Each is a percentage, so 85% means 0.85. Roomer reloads itself when you save, so the change takes effect straight away.
 

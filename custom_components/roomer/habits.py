@@ -266,8 +266,29 @@ Note: This is a learned pattern - actual sensor data should override if contradi
         self.save_learned_patterns()
 
 
+# Fraction of the runner-up room's support subtracted from the winner's.
+# Kept below 1.0 because in a shared home a competing signal is often
+# another person rather than evidence against this one.
+CONFLICT_PENALTY = 0.5
+
+# Weight at or above which a signal counts as "strong" for the explanation.
+STRONG_SIGNAL_WEIGHT = 0.5
+
+# Cap on any single piece of evidence so one signal can never claim certainty.
+MAX_SIGNAL_WEIGHT = 0.99
+
+
 class ConfidenceCombiner:
-    """Combine confidence scores from multiple sources using configured weights."""
+    """Combine confidence scores from multiple sources using configured weights.
+
+    Each weight is read as "how likely this signal alone is to be right".
+    Signals pointing at the same room are combined with a noisy-OR,
+    ``1 - prod(1 - w)``, so agreeing evidence raises confidence towards 1.0
+    without exceeding it. Only the strongest signal of each hint type counts
+    per room, so three lights in one room are not three independent votes;
+    a person's owned device counts separately from the same anonymous signal.
+    The winner is then discounted by the support for the runner-up room.
+    """
 
     def __init__(self, weights: dict[str, float] | None = None):
         """Initialize with optional custom weights."""
@@ -303,8 +324,15 @@ class ConfidenceCombiner:
         Returns:
             Tuple of (room, confidence, explanation)
         """
-        candidates: dict[str, float] = {}
+        # Strongest evidence per (room, source), where source is a hint type,
+        # "llm_reasoning" or "habit".
+        evidence: dict[str, dict[str, float]] = {}
         explanations: list[str] = []
+
+        def add(room: str, source: str, weight: float) -> None:
+            weight = max(0.0, min(MAX_SIGNAL_WEIGHT, weight))
+            sources = evidence.setdefault(room, {})
+            sources[source] = max(sources.get(source, 0.0), weight)
 
         # Process sensor indicators
         if sensor_indicators:
@@ -329,41 +357,47 @@ class ConfidenceCombiner:
                     else:
                         weight = 0.1
 
-                candidates[room] = candidates.get(room, 0) + weight
+                # A person's own device is extra evidence on top of the
+                # anonymous one (see _get_person_indicators), so keep it apart.
+                source = f"{hint_type}:owned" if indicator.get("owned_by") else hint_type
+                add(room, source, weight)
 
                 # Build explanation
-                if weight >= 0.5:
+                if weight >= STRONG_SIGNAL_WEIGHT:
                     short_entity = entity_id.split(".")[-1] if "." in entity_id else entity_id
                     explanations.append(f"{hint_type}: {short_entity}")
 
         # LLM reasoning
         if llm_room and llm_room != "unknown":
-            weighted = llm_confidence * self.weights.get("llm_reasoning", 0.5)
-            candidates[llm_room] = candidates.get(llm_room, 0) + weighted
+            add(llm_room, "llm_reasoning", llm_confidence * self.weights.get("llm_reasoning", 0.5))
             if llm_confidence >= 0.5:
                 explanations.append(f"LLM: {llm_room}")
 
         # Habit prediction
         if habit_room and habit_room != "unknown" and habit_confidence > 0:
-            weighted = habit_confidence * self.weights.get("habit", 0.35)
-            candidates[habit_room] = candidates.get(habit_room, 0) + weighted
+            add(habit_room, "habit", habit_confidence * self.weights.get("habit", 0.35))
 
-        if not candidates:
+        support: dict[str, float] = {}
+        for room, sources in evidence.items():
+            miss = 1.0
+            for weight in sources.values():
+                miss *= 1.0 - weight
+            support[room] = 1.0 - miss
+
+        if not support or max(support.values()) <= 0:
             return "unknown", 0.0, "No signals available"
 
-        # Find the room with highest combined score
-        best_room = max(candidates, key=candidates.get)
-        best_score = candidates[best_room]
+        # Find the room with highest combined support
+        ranked = sorted(support.items(), key=lambda item: item[1], reverse=True)
+        best_room, best_support = ranked[0]
+        runner_up = ranked[1][1] if len(ranked) > 1 else 0.0
 
-        # Normalize confidence (cap at 1.0)
-        # Use sum of top weights as max possible
-        max_possible = sum(sorted(self.weights.values(), reverse=True)[:3])
-        final_confidence = min(1.0, best_score / max_possible)
+        final_confidence = best_support * (1.0 - CONFLICT_PENALTY * runner_up)
+        final_confidence = max(0.0, min(1.0, final_confidence))
 
-        # Boost confidence if multiple strong sources agree
-        if len([r for r, s in candidates.items() if r == best_room and s >= 0.5]) >= 2:
-            final_confidence = min(1.0, final_confidence + 0.1)
-            explanations.append("Multiple signals agree")
+        strong_sources = [w for w in evidence[best_room].values() if w >= STRONG_SIGNAL_WEIGHT]
+        if len(strong_sources) >= 2:
+            explanations.insert(0, "Multiple signals agree")
 
         explanation = " | ".join(explanations[:4])  # Limit explanation length
 

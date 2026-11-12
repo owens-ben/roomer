@@ -23,7 +23,7 @@ condition:
   # Debounce - don't trigger if we just identified someone
   - condition: template
     value_template: >
-      {{ (as_timestamp(now()) - as_timestamp(state_attr('sensor.llm_vision_last_identification', 'timestamp') or 0)) > 30 }}
+      {{ (as_timestamp(now()) - as_timestamp(state_attr('sensor.vision_last_identification', 'timestamp') or 0)) > 30 }}
 
 action:
   # Enable tracking to follow the subject

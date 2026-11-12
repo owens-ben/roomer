@@ -1,8 +1,8 @@
 blueprint:
   name: Roomer - Welcome Home Lights
   description: >-
-    Turn on lights when someone arrives home. Uses Roomer's arrival
-    detection to trigger lights in the room they arrive to.
+    Turn on lights when someone arrives home. Triggers when the person's
+    Roomer room sensor changes from "away" to a room.
   domain: automation
   author: Roomer
   source_url: https://github.com/owens-ben/Roomer/blob/main/blueprints/welcome_home_lights.yaml
@@ -37,22 +37,25 @@ blueprint:
       selector:
         boolean:
 
+variables:
+  only_after_dark: !input only_after_dark
+
 trigger:
-  - platform: event
-    event_type: roomer_person_arrived
+  - platform: state
+    entity_id: !input person_sensor
+    from: away
 
 condition:
   - condition: template
     value_template: >
-      {{ trigger.event.data.entity_name | lower == 
-         state_attr(person_sensor, 'friendly_name') | lower | replace('_room', '') | replace(' room', '') }}
+      {{ trigger.to_state.state not in ['away', 'unknown', 'unavailable'] }}
   - condition: or
     conditions:
       - condition: template
         value_template: "{{ not only_after_dark }}"
-      - condition: sun
-        after: sunset
-        before: sunrise
+      - condition: state
+        entity_id: sun.sun
+        state: below_horizon
 
 action:
   - service: light.turn_on

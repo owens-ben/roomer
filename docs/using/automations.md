@@ -21,7 +21,7 @@ trigger:
     for: "00:00:30"   # must stay "on" for 30 seconds
 ```
 
-Be careful with `confidence` conditions. Values between 0.3 and 0.6 are normal for a correct answer, so a condition like `confidence > 0.8` will rarely pass. If you want one, start around `0.4` and check the actual values in your home first. [Accuracy & limits](accuracy.md) explains why.
+If you add a `confidence` condition, `0.7` is a good starting point: it passes when at least a motion sensor and the AI agree, or when one strong signal (camera, TV, the person's own PC) points at the room. Values around 0.5 mean the evidence is thin or split between rooms. Check the actual values in your home before going higher. [Accuracy & limits](accuracy.md) explains how the number is worked out.
 
 ## How to add these examples
 
@@ -188,16 +188,21 @@ A blueprint is a ready-made automation where you only fill in a form. Roomer shi
 
 | Blueprint | What it does | Triggers on |
 |---|---|---|
-| **Roomer - Follow Me Music** | When a person changes rooms, pauses the speaker in the old room and plays on the speaker in the new room | A person's room sensor changing |
-| **Roomer - Room-Based Climate Control** | Sets a thermostat to an "occupied" temperature when a person enters a chosen room, and back to an "away" temperature when they leave it | A person's room sensor changing |
-| **Roomer - Welcome Home Lights** | Turns on lights (optionally only after dark) when a person arrives home, then off again after five minutes | `roomer_person_arrived` event |
-| **Roomer - Goodbye Routine** | After a delay, turns off lights, locks doors, sets the thermostat and arms the alarm when someone leaves | `roomer_person_left` event |
+| **Roomer - Follow Me Music** | When a person changes rooms with at least the minimum confidence (default `0.7`), pauses the speaker in the old room and plays on the speaker in the new room | A person's room sensor changing room |
+| **Roomer - Room-Based Climate Control** | Sets a thermostat to an "occupied" temperature when a person enters a chosen room, and back to an "away" temperature when they leave it | A person's room sensor changing room |
+| **Roomer - Welcome Home Lights** | Turns on lights (optionally only after dark) when a person arrives home, then off again after five minutes | A person's room sensor changing from `away` to a room |
+| **Roomer - Goodbye Routine** | After a delay, turns off lights, locks doors, sets the thermostat and arms the alarm, if everyone you picked is still away | Any of the chosen room sensors changing from a room to `away` |
 
-!!! warning "Known issues with the bundled blueprints"
-    - The blueprints use their inputs (such as `min_confidence` or `target_room`) inside templates without declaring them as `variables`. Home Assistant doesn't make inputs available to templates that way, so the template conditions may fail or always evaluate false.
-    - **Follow Me Music** defaults to a minimum confidence of `0.6`, which many correct Roomer answers don't reach. Lower it to around `0.4`.
+All four trigger on the room sensor's state, so they keep working even if a person was already home when Home Assistant started. Only room changes trigger them: updates where just the `confidence` attribute changes are ignored.
 
-    Until these are fixed, the hand-written examples above are the more reliable starting point.
+Notes on each:
+
+- **Welcome Home Lights** and **Goodbye Routine** depend on `away`, so each person needs a device tracker assigned under **Person Device Ownership** (see [Entities](entities.md)). A change from `away` to `unknown` is not treated as an arrival.
+- **Goodbye Routine** takes one or more room sensors. If someone comes back during the delay, or anyone you picked is still home when it ends, nothing happens. The lights, locks, thermostat and alarm are each optional; leaving one empty skips just that step.
+- **Follow Me Music**: the speaker that's playing in the old room is a "media playing" signal for that room if it's mapped in Roomer, which holds the person there. Map speakers you use with this blueprint sparingly, or lower **Minimum Confidence** to `0.6` (a single motion sensor in the new room is then enough). Pick values around 0.7; the old advice to lower it to 0.4 dates from an earlier, lower-scoring confidence formula.
+
+!!! note "Upgrading from an earlier version"
+    Goodbye Routine's inputs changed (it now asks for **Person Room Sensors**). Re-import the blueprints, then open each automation made from Goodbye Routine, fill in the sensors and save.
 
 ### Importing a blueprint
 
@@ -223,8 +228,8 @@ A blueprint is a ready-made automation where you only fill in a form. Roomer shi
 **Using it:** go to **Settings → Automations & scenes → Create automation**, choose **Create new automation from blueprint**, pick the Roomer blueprint, fill in the inputs (for example **Person Room Sensor** = `sensor.alice_room`) and save.
 
 !!! example "Screenshot needed: blueprint-follow-me-form.png"
-    The "Roomer - Follow Me Music" blueprint form filled in: Person Room Sensor set to `sensor.alice_room`, a room-to-speaker mapping, and Minimum Confidence lowered to 0.4.
+    The "Roomer - Follow Me Music" blueprint form filled in: Person Room Sensor set to `sensor.alice_room`, a room-to-speaker mapping, and Minimum Confidence at its default of 0.7.
 
 ## Vision identification on camera motion
 
-If you have a camera with person or animal detection, [`automations/vision_on_motion.yaml`](https://github.com/owens-ben/roomer/blob/main/automations/vision_on_motion.yaml) is an example that calls `roomer.identify_person` whenever the camera detects someone. It was written for a specific Reolink camera, so replace every `e1_zoom` entity with your own. Its debounce condition refers to `sensor.llm_vision_last_identification`, an old name; change that to `sensor.vision_last_identification`. See [Services & events](services-events.md) for the service fields.
+If you have a camera with person or animal detection, [`automations/vision_on_motion.yaml`](https://github.com/owens-ben/roomer/blob/main/automations/vision_on_motion.yaml) is an example that calls `roomer.identify_person` whenever the camera detects someone. It was written for a specific Reolink camera, so replace every `e1_zoom` entity with your own. Its debounce condition reads the `timestamp` attribute of `sensor.vision_last_identification`, so it doesn't re-run within 30 seconds of the last identification. See [Services & events](services-events.md) for the service fields.
