@@ -271,6 +271,8 @@ def coordinator(habit_predictor):
     coord.notification_manager = MagicMock()
     coord._habits_dirty = False
     coord._previous_rooms = {}
+    coord._last_clue = {}
+    coord._reason_state = {}
     coord.hass = make_hass()
     return coord
 
@@ -312,7 +314,7 @@ class TestCoordinatorDevicePresence:
         guess = await coordinator._process_entity("Alice", "person", {}, [])
 
         coordinator.provider.deduce_presence.assert_awaited_once()
-        assert guess.source == "llm"
+        assert guess.source == "prior"  # no active clue, so only the LLM's time-of-day guess
 
     async def test_pet_located_by_tag(self, coordinator):
         coordinator.hass = make_hass(make_state("sensor.whiskers_tag_area", "Bedroom", minutes_ago=10))
@@ -409,6 +411,7 @@ class TestRoomOccupantsSensor:
     def data_coordinator(self):
         coordinator = MagicMock()
         coordinator.rooms = ["office", "living_room", "kitchen", "away", "unknown"]
+        coordinator.area_id_for_room.return_value = None
         coordinator.persons = [{"name": "Alice"}, {"name": "Bob"}, {"name": "Carol"}]
         coordinator.pets = [{"name": "Whiskers"}]
         coordinator.data = {
@@ -442,6 +445,7 @@ class TestRoomOccupantsSensor:
             "pets": [],
             "confidence": {"Alice": 0.9, "Bob": 0.62},
             "sources": {"Alice": "device_room", "Bob": "llm"},
+            "room_area_id": None,
         }
 
     def test_pet_alone_is_zero_people(self, data_coordinator):

@@ -10,12 +10,15 @@ Go to **Developer Tools → States** and search for `sensor.alice_room` (use you
 
 | Attribute | What it tells you |
 |---|---|
-| `indicators` | Which mapped sensors were active (`motion: hallway_motion`, `computer: alice_pc`, …), followed by a summary of the strongest signals and the AI's pick (`LLM: office`). `No signals available` means nothing was active and the AI gave no usable answer. Entries ending in `(fallback)` mean the AI couldn't be reached. |
+| `indicators` | Which mapped sensors were active (`motion: hallway_motion`, `computer: alice_pc`, …), followed by a summary of the strongest signals and the AI's pick (`LLM: office`). `No active clues; time-of-day guess` means nothing mapped was active, so the room is only the AI's and habits' prior (source `prior`, confidence 0.25 or less). `No signals available` means nothing was active and the AI gave no usable answer. Entries ending in `(fallback)` mean the AI couldn't be reached. |
 | `raw_response` | The AI model's exact reply, for example `ROOM: office`. `Device tracker indicates not home` means the person is away by device tracker and the AI was skipped. An error message (or an empty value) together with a low confidence means the AI request failed. |
 | `confidence` | 0.0 to 1.0. Values of 0.3 to 0.6 are normal; see [Accuracy & limits](accuracy.md). A sudden drop for everyone usually means the AI is unreachable. |
 
-!!! note "There is no `source` or `reasoning` attribute"
-    Some older docs mention `source`, `reasoning` or `last_updated` attributes. Roomer doesn't expose those in the current version. Use `indicators` and `raw_response` instead.
+| `source` | How the room was decided: `sensor`, `device_room`, `device_tracker`, `sticky` (still where last seen), `prior` (a time-of-day guess with nothing active) or `manual_correction`. A `prior` with a low confidence just means no mapped entity is active. |
+| `last_changed_reason` | Why the room last changed. |
+
+!!! note "There is no `reasoning` attribute"
+    Some older docs mention `reasoning` or `last_updated` attributes. Roomer doesn't expose those. Use `indicators`, `source` and `raw_response` instead.
 
 ### 2. Turn on debug logging
 
@@ -54,7 +57,7 @@ Roomer writes every decision, with the sensor states it saw, to `/config/roomer_
 
     **Likely causes**
 
-    - None of the sensors mapped to rooms are active, *and* the AI's answer couldn't be matched to one of your rooms. `indicators` shows `No signals available`.
+    - None of the sensors mapped to rooms are active, *and* the AI's answer couldn't be matched to one of your rooms. `indicators` shows `No signals available` (or, with `source: prior`, `No active clues; time-of-day guess`).
     - No sensors are mapped to rooms at all, so Roomer is relying on the AI alone, which has nothing to go on.
     - Roomer hasn't finished its first update yet. This is normal for a few seconds after a restart, longer if the AI is slow.
     - The AI model answers with a room name that isn't one of yours (for example "lounge" when your room is `living_room`).

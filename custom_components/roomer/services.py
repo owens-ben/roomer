@@ -22,9 +22,23 @@ from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 
-from .const import DOMAIN
+from .const import (
+    ATTR_CONFIDENCE,
+    ATTR_INDICATORS,
+    ATTR_LAST_CHANGED_REASON,
+    ATTR_ROOM_AREA_ID,
+    ATTR_SOURCE,
+    DOMAIN,
+    ROOM_AWAY,
+    ROOM_UNKNOWN,
+    SOURCE_MANUAL,
+    VALID_ROOMS,
+    presence_sensor_unique_id,
+)
 from .habits import HabitPredictor
 from .history import HistoryTracker
 
@@ -75,7 +89,7 @@ CORRECT_ROOM_SCHEMA = vol.Schema(
     {
         vol.Required("entity_id"): cv.entity_id,
         vol.Required("room"): cv.string,
-        vol.Optional("confidence", default=1.0): vol.Coerce(float),
+        vol.Optional("confidence", default=1.0): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1.0)),
     }
 )
 
@@ -145,19 +159,102 @@ async def async_handle_refresh(hass: HomeAssistant, call: ServiceCall) -> None:
         _LOGGER.warning("No Roomer coordinator found for refresh")
 
 
+def _slug(text: str) -> str:
+    return "".join(c if c.isalnum() else "_" for c in text.lower()).strip("_")
+
+
+def _roomer_coordinators(hass: HomeAssistant) -> list[tuple[str, Any]]:
+    """Return (entry_id, coordinator) for every set-up Roomer config entry."""
+    found = []
+    for key, value in hass.data.get(DOMAIN, {}).items():
+        if isinstance(getattr(value, "persons", None), list) and isinstance(getattr(value, "pets", None), list):
+            found.append((key, value))
+    return found
+
+
+def resolve_tracked_entity(hass: HomeAssistant, entity_id: str) -> tuple[Any, str, str] | None:
+    """Find the configured person or pet that a Roomer room sensor belongs to.
+
+    Returns (coordinator, name, entity_type), or None when Roomer has no
+    coordinator to ask. The name comes from the integration's own configuration,
+    never from the entity id string: the sensor's unique id (via the entity
+    registry) is matched against the unique id built for each configured
+    person and pet. Without a registry entry (e.g. a sensor restored without
+    one) the entity id's object id is matched against the configured names.
+
+    Raises ServiceValidationError when Roomer is set up but the entity is not
+    one of its room sensors.
+    """
+    coordinators = _roomer_coordinators(hass)
+    if not coordinators:
+        return None
+
+    candidates = [
+        (coordinator, person.get("name", "unknown"), "person")
+        for _key, coordinator in coordinators
+        for person in coordinator.persons
+    ] + [
+        (coordinator, pet.get("name", "unknown"), "pet")
+        for _key, coordinator in coordinators
+        for pet in coordinator.pets
+    ]
+
+    registry_entry = er.async_get(hass).async_get(entity_id)
+    if registry_entry is not None and registry_entry.platform == DOMAIN and registry_entry.unique_id:
+        for coordinator, name, entity_type in candidates:
+            if registry_entry.unique_id == presence_sensor_unique_id(entity_type, name):
+                return coordinator, name, entity_type
+        raise ServiceValidationError(f"{entity_id} is not the room sensor of a configured Roomer person or pet")
+
+    # Fallback for entities without a registry entry: sensor.<name>_room[_N]
+    object_id = entity_id.split(".", 1)[-1]
+    for coordinator, name, entity_type in candidates:
+        base = f"{_slug(name)}_room"
+        if object_id == base or (object_id.startswith(f"{base}_") and object_id[len(base) + 1 :].isdigit()):
+            return coordinator, name, entity_type
+
+    raise ServiceValidationError(f"{entity_id} is not the room sensor of a configured Roomer person or pet")
+
+
+def validate_room(room: str, rooms: list[str]) -> str:
+    """Return the configured name of ``room``, or raise ServiceValidationError.
+
+    Valid rooms are the configured rooms plus ``away`` and ``unknown``. Case,
+    spaces and dashes are ignored ("Living Room" is "living_room").
+    """
+    allowed = [*rooms, ROOM_AWAY, ROOM_UNKNOWN]
+    wanted = _slug(str(room))
+    for candidate in allowed:
+        if _slug(candidate) == wanted:
+            return candidate
+    raise ServiceValidationError(f"'{room}' is not a configured room. Choose one of: {', '.join(allowed)}")
+
+
 async def async_handle_correct_room(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle the correct_room service call.
 
-    Manually corrects a person's room and learns from the correction.
+    Manually corrects a person's room and learns from the correction. The
+    person or pet is found from Roomer's own configuration (the sensor's
+    registry entry), not from the entity id. Raises ServiceValidationError for
+    an entity that isn't a Roomer room sensor or a room that isn't configured.
     """
     entity_id = call.data.get("entity_id")
     room = call.data.get("room")
     confidence = call.data.get("confidence", 1.0)
 
-    _LOGGER.debug("Correct room service: %s -> %s (confidence: %s)", entity_id, room, confidence)
+    resolved = resolve_tracked_entity(hass, entity_id)
+    if resolved is not None:
+        coordinator, entity_name, _entity_type = resolved
+        room = validate_room(room, list(coordinator.rooms))
+    else:
+        # Roomer isn't set up (nothing to resolve from): keep the old behaviour of
+        # deriving the name from the entity id, and check against the default rooms
+        coordinator = None
+        entity_name = entity_id.split(".")[-1].replace("_room", "").replace("_", " ").title()
+        room = validate_room(room, VALID_ROOMS)
+        _LOGGER.warning("No Roomer coordinator found; assuming %s is %s", entity_id, entity_name)
 
-    # Extract entity name from entity_id (e.g., sensor.ben_room -> Ben)
-    entity_name = entity_id.split(".")[-1].replace("_room", "").replace("_", " ").title()
+    _LOGGER.debug("Correct room service: %s (%s) -> %s (confidence: %s)", entity_id, entity_name, room, confidence)
 
     # Learn from the correction and save it right away, since corrections are rare
     predictor = get_habit_predictor(hass)
@@ -167,17 +264,24 @@ async def async_handle_correct_room(hass: HomeAssistant, call: ServiceCall) -> N
             room=room,
             confidence=confidence,
         )
-        await asyncio.to_thread(predictor.save_learned_patterns)
+        await hass.async_add_executor_job(predictor.save_learned_patterns)
     else:
         _LOGGER.warning("No habit predictor available; correction not learned")
+
+    # Let the coordinator keep them there until a clue says otherwise
+    if coordinator is not None:
+        coordinator.register_correction(entity_name, room, confidence)
 
     # Update the state
     current_state = hass.states.get(entity_id)
     if current_state:
         new_attrs = dict(current_state.attributes)
-        new_attrs["confidence"] = confidence
-        new_attrs["source"] = "manual_correction"
-        new_attrs["indicators"] = ["User corrected"]
+        new_attrs[ATTR_CONFIDENCE] = confidence
+        new_attrs[ATTR_SOURCE] = SOURCE_MANUAL
+        new_attrs[ATTR_INDICATORS] = ["User corrected"]
+        new_attrs[ATTR_LAST_CHANGED_REASON] = SOURCE_MANUAL
+        if coordinator is not None:
+            new_attrs[ATTR_ROOM_AREA_ID] = coordinator.area_id_for_room(room)
 
         hass.states.async_set(entity_id, room, new_attrs)
         _LOGGER.info("Corrected %s room to %s", entity_name, room)
@@ -301,7 +405,7 @@ async def async_handle_cleanup_storage(hass: HomeAssistant, call: ServiceCall) -
         event_logger.max_file_size_bytes = int(max_file_size_mb * 1024 * 1024)
 
     # Perform cleanup
-    result = event_logger.cleanup()
+    result = await hass.async_add_executor_job(event_logger.cleanup)
 
     summary = {
         "deleted_by_time": result.get("deleted_by_time", 0),

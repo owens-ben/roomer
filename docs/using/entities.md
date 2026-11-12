@@ -47,9 +47,12 @@ The main entity. Its state is the room Roomer thinks the person or pet is in.
 | Attribute | Type | Example | Meaning |
 |---|---|---|---|
 | `confidence` | number, 0.0 to 1.0 | `0.46` | How strongly the signals point to this room. It is a fraction, **not** a percentage, and not a true probability. See [Accuracy & limits](accuracy.md). |
-| `indicators` | list of text | see below | The signals behind the decision. Up to five `hint_type: entity` entries for active mapped sensors, followed by a one-line summary from the confidence combiner. When there were no signals at all, this contains `No signals available`. |
+| `indicators` | list of text | see below | Human-readable clues behind the decision. Up to five `hint_type: entity` entries for active mapped sensors, followed by a one-line summary from the confidence combiner. When nothing mapped is active it is `["No active clues; time-of-day guess"]` (source `prior`) or a single "Last seen in the office 12m ago; no active clues" line (source `sticky`). |
 | `raw_response` | text | `ROOM: office` | Exactly what the AI model replied. When the person is away by device tracker it reads `Device tracker indicates not home`. When a device located them it names the device, such as `sensor.alice_phone_area reports Office`. When the AI server could not be reached it holds the error message, which may be empty for a timeout. |
-| `source` | text | `device_room` | Where the room came from: `device_room` (a device of theirs reported it), `device_tracker` (away) or `llm` (worked out from sensors, habits and the AI). |
+| `source` | text | `sensor` | Where the room came from: `sensor` (an active mapped entity, with the AI and habits as a tie-break), `device_room` (a device of theirs reported it), `device_tracker` (away), `sticky` (nothing is active, so they stay where they were last seen), `prior` (nothing is active and nothing recent: only a time-of-day guess from the AI and habits, with low confidence), `manual_correction` (set with `roomer.correct_room`) or `llm` (an AI result Roomer did not combine with anything). |
+| `last_changed_reason` | text | `motion: hallway_motion` | Why the room last changed: the first clue at the moment it changed, or the source (`device_room`, `manual_correction`) when there was none. It stays the same while the room stays the same, so a UI can say "moved to the hallway because of hallway_motion". Empty until the first update. |
+| `room_area_id` | text or `null` | `living_room` | The Home Assistant area id of the current room, so a dashboard can map rooms to areas without guessing. See [Room areas](../getting-started/map-rooms.md#room-areas). `null` for `away`, `unknown` and rooms with no area. |
+| `candidate_rooms` | list of text | `["kitchen", "living_room"]` | Only present when one entity covers several rooms (a camera that sees both) and raised more than one room equally. The first is the room in the state. See [One entity, several rooms](../getting-started/map-rooms.md#one-entity-several-rooms). |
 | `entity_type` | text | `person` | `person` or `pet`. |
 
 A typical `indicators` value while Alice works at her PC with the desk lamp on:
@@ -91,6 +94,7 @@ There is no `..._in_away` binary sensor, because `away` is not a room you config
 |---|---|---|
 | `confidence` | number, 0.0 to 1.0 | The person's confidence if they are in **this** room; `0.0` otherwise |
 | `current_room` | text | Whatever room the person is in right now (same as the room sensor's state) |
+| `room_area_id` | text or `null` | The Home Assistant area id this room maps to |
 | `entity_type` | text | `person` or `pet` |
 
 ## Room occupants sensors: `sensor.<room>_occupants`
@@ -103,7 +107,7 @@ For every room you configured, Roomer creates a sensor that answers "who is in t
 
 ### States
 
-The state is the number of **people** in the room. Pets are listed in the attributes but not counted, so a cat asleep in the office doesn't make the room count as occupied. It is `unknown` until the first update finishes.
+The state is the number of **people** in the room. Someone raised in two rooms by one shared entity (see [One entity, several rooms](../getting-started/map-rooms.md#one-entity-several-rooms)) counts in both. Pets are listed in the attributes but not counted, so a cat asleep in the office doesn't make the room count as occupied. It is `unknown` until the first update finishes.
 
 ### Attributes
 
@@ -112,7 +116,8 @@ The state is the number of **people** in the room. Pets are listed in the attrib
 | `people` | list of text | `["Alice", "Bob"]` | The people Roomer currently places in this room |
 | `pets` | list of text | `["Miso"]` | The pets in this room |
 | `confidence` | map of name to number | `{"Alice": 0.9, "Bob": 0.62}` | Each one's confidence in this room, 0.0 to 1.0 |
-| `sources` | map of name to text | `{"Alice": "device_room", "Bob": "llm"}` | Where each one's room came from, as for the `source` attribute above |
+| `sources` | map of name to text | `{"Alice": "device_room", "Bob": "sensor"}` | Where each one's room came from, as for the `source` attribute above |
+| `room_area_id` | text or `null` | `living_room` | The Home Assistant area id this room maps to |
 
 ```yaml
 # Turn the office lights off five minutes after the last person leaves

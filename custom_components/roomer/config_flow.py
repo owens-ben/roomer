@@ -21,6 +21,7 @@ from .const import (
     CONF_PETS,
     CONF_POLL_INTERVAL,
     CONF_PROVIDER,
+    CONF_ROOM_AREAS,
     CONF_ROOM_ENTITIES,
     CONF_ROOMS,
     CONF_TIMEOUT,
@@ -32,10 +33,14 @@ from .const import (
     DEFAULT_PROVIDER,
     DEFAULT_TIMEOUT,
     DEFAULT_URL,
+    DETECTS_OPTIONS,
     DOMAIN,
+    ROOM_AWAY,
+    ROOM_UNKNOWN,
     SUPPORTED_PROVIDERS,
     VALID_ROOMS,
 )
+from .entity_hints import guess_detects, guess_entity_hint, normalize_room_entities
 from .providers import get_provider
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,33 +73,28 @@ WEIGHT_HINT_TYPES = [
 ]
 
 
-def _guess_entity_hint(entity_id: str) -> str:
-    """Guess the entity hint type from the entity ID."""
-    entity_lower = entity_id.lower()
+def _guess_entity_hint(entity_id: str, device_class: str | None = None) -> str:
+    """Guess the entity hint type (see entity_hints.guess_entity_hint)."""
+    return guess_entity_hint(entity_id, device_class)
 
-    if "motion" in entity_lower or "occupancy" in entity_lower:
-        return "motion"
-    if "media_player" in entity_lower or "tv" in entity_lower:
-        return "media"
-    if "light." in entity_lower:
-        return "light"
-    if "pc" in entity_lower or "computer" in entity_lower or "desktop" in entity_lower:
-        return "computer"
-    if "camera" in entity_lower or "person" in entity_lower or "animal" in entity_lower:
-        return "camera"
-    if "door" in entity_lower or "window" in entity_lower or "contact" in entity_lower:
-        return "door"
-    if "temperature" in entity_lower or "humidity" in entity_lower:
-        return "climate"
-    if "device_tracker" in entity_lower:
-        return "presence"
-    return "appliance"
+
+def _entry_for(hass, entity_id: str, existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Build the stored mapping entry for an entity, keeping what is already known about it."""
+    state = hass.states.get(entity_id)
+    device_class = state.attributes.get("device_class") if state else None
+    friendly_name = state.attributes.get("friendly_name") if state else None
+    entry = dict(existing or {})
+    entry["entity_id"] = entity_id
+    entry.setdefault("hint_type", _guess_entity_hint(entity_id, device_class))
+    entry.setdefault("weight", 1.0)
+    entry.setdefault("detects", guess_detects(entity_id, friendly_name))
+    return entry
 
 
 class LLMPresenceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Roomer."""
 
-    VERSION = 2  # Bumped for new room_entities config
+    VERSION = 3  # 3: room_entities entries carry weight and detects (multi-room mapping)
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -282,7 +282,7 @@ class LLMPresenceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     valid = []
                     for e in entities:
                         if self.hass.states.get(e) is not None:
-                            valid.append({"entity_id": e, "hint_type": _guess_entity_hint(e)})
+                            valid.append(_entry_for(self.hass, e))
                         else:
                             invalid_entities.append(e)
                     if valid:
@@ -357,7 +357,14 @@ class LLMPresenceOptionsFlow(config_entries.OptionsFlow):
         """Manage the options - show menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["general", "room_entities", "person_devices", "confidence_weights"],
+            menu_options=[
+                "general",
+                "room_entities",
+                "multi_room",
+                "room_areas",
+                "person_devices",
+                "confidence_weights",
+            ],
         )
 
     async def async_step_general(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -405,7 +412,7 @@ class LLMPresenceOptionsFlow(config_entries.OptionsFlow):
         """Configure room-entity mappings."""
         if user_input is not None:
             # Process and save room entity mappings, validating entities exist
-            room_entities = dict(self._get(CONF_ROOM_ENTITIES, {}))
+            room_entities = dict(normalize_room_entities(self._get(CONF_ROOM_ENTITIES, {})))
             rooms = self._get(CONF_ROOMS, [])
             invalid_entities = []
 
@@ -413,9 +420,11 @@ class LLMPresenceOptionsFlow(config_entries.OptionsFlow):
                 entities = user_input.get(room, [])
                 if entities:
                     valid = []
+                    known = {e["entity_id"]: e for e in room_entities.get(room, [])}
                     for e in entities:
                         if self.hass.states.get(e) is not None:
-                            valid.append({"entity_id": e, "hint_type": _guess_entity_hint(e)})
+                            # Keep what is already known (weight, detects) for entities that stay
+                            valid.append(_entry_for(self.hass, e, known.get(e)))
                         else:
                             invalid_entities.append(e)
                     if valid:
@@ -435,7 +444,7 @@ class LLMPresenceOptionsFlow(config_entries.OptionsFlow):
 
         # Build dynamic schema, one picker per room keyed by the room name
         rooms = self._get(CONF_ROOMS, [])
-        current_mappings = self._get(CONF_ROOM_ENTITIES, {})
+        current_mappings = normalize_room_entities(self._get(CONF_ROOM_ENTITIES, {}))
         schema_dict = {}
 
         for room in rooms:
@@ -451,6 +460,92 @@ class LLMPresenceOptionsFlow(config_entries.OptionsFlow):
             step_id="room_entities",
             data_schema=vol.Schema(schema_dict),
         )
+
+    async def async_step_multi_room(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Map one entity to several rooms, e.g. a camera that sees two rooms.
+
+        The entity is stored under each chosen room. ``split_weight`` shares its
+        evidence between them instead of giving each room all of it, and
+        ``detects`` limits a camera detection to people or to animals.
+        """
+        errors: dict[str, str] = {}
+        rooms = self._get(CONF_ROOMS, [])
+
+        if user_input is not None:
+            entity_id = user_input["entity_id"]
+            chosen = [r for r in user_input.get("rooms", []) if r in rooms]
+            if self.hass.states.get(entity_id) is None:
+                errors["entity_id"] = "entity_not_found"
+            else:
+                room_entities = normalize_room_entities(self._get(CONF_ROOM_ENTITIES, {}))
+                previous: dict[str, Any] | None = None
+                for room in list(room_entities):
+                    kept = []
+                    for entry in room_entities[room]:
+                        if entry["entity_id"] == entity_id:
+                            previous = previous or entry
+                        else:
+                            kept.append(entry)
+                    if kept:
+                        room_entities[room] = kept
+                    else:
+                        del room_entities[room]
+
+                if chosen:
+                    base = _entry_for(self.hass, entity_id, {"hint_type": previous["hint_type"]} if previous else None)
+                    detects = user_input.get("detects", "auto")
+                    if detects != "auto":
+                        base["detects"] = detects
+                    base["weight"] = round(1 / len(chosen), 3) if user_input.get("split_weight") else 1.0
+                    for room in chosen:
+                        room_entities.setdefault(room, []).append(dict(base))
+                return self._save({CONF_ROOM_ENTITIES: room_entities})
+
+        return self.async_show_form(
+            step_id="multi_room",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("entity_id"): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            filter=selector.EntityFilterSelectorConfig(domain=ROOM_ENTITY_DOMAINS),
+                        )
+                    ),
+                    vol.Optional("rooms", default=[]): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=rooms,
+                            multiple=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional("detects", default="auto"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=["auto", *DETECTS_OPTIONS],
+                            translation_key="detects",
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional("split_weight", default=False): selector.BooleanSelector(),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_room_areas(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Map rooms to Home Assistant areas, exposed as ``room_area_id``."""
+        rooms = self._get(CONF_ROOMS, [])
+        current = self._get(CONF_ROOM_AREAS, {}) or {}
+
+        if user_input is not None:
+            return self._save({CONF_ROOM_AREAS: {room: user_input[room] for room in rooms if user_input.get(room)}})
+
+        schema_dict = {}
+        for room in rooms:
+            if room in (ROOM_AWAY, ROOM_UNKNOWN):
+                continue
+            key = vol.Optional(room, description={"suggested_value": current.get(room)})
+            schema_dict[key] = selector.AreaSelector()
+
+        return self.async_show_form(step_id="room_areas", data_schema=vol.Schema(schema_dict))
 
     async def async_step_person_devices(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Configure person-device ownership mappings."""

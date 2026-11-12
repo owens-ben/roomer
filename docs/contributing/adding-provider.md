@@ -17,7 +17,7 @@ class PresenceGuess:
     confidence: float  # 0.0 to 1.0
     raw_response: str  # what the model said (shown as a sensor attribute)
     indicators: list[str]  # human-readable signals that support the guess
-    source: str = "llm"  # llm, device_tracker, habit, sensor
+    source: str = "llm"  # llm, sensor, device_room, device_tracker, prior, sticky, manual_correction
 
     def to_dict(self) -> dict[str, Any]: ...
 ```

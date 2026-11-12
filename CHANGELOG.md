@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **One entity, several rooms.** A mapped entity can now cover more than one room, for example a camera that sees both the kitchen and the living room. Map it with the new **Entity Covering Several Rooms** options step: every room you pick is raised by its detections, optionally splitting the entity's weight between them (`weight`). When it is the only evidence the person stays in the room they were in, the other room is listed in the new `candidate_rooms` attribute, and the occupants sensors and room binary sensors count them in both. Stored mappings gain `weight` and `detects`; config entries are migrated to version 3 and existing single-room mappings behave as before.
+- Person detections count only toward people and animal detections only toward pets (`detects`: `person`, `animal` or `any`, worked out from the entity name unless you set it).
+- **Room Areas** options step and the `room_area_id` attribute on the room sensors, the occupants sensors and the room binary sensors, so a UI can map rooms to Home Assistant areas. Rooms with no mapping are matched to an area of the same name.
+- `last_changed_reason` attribute on `sensor.{name}_room`: why the room last changed.
+- New `source` values: `sensor` (an active mapped entity), `prior`, `sticky` and `manual_correction`.
 - **Device-based room presence.** A phone, watch or tag entity assigned to a person or pet that reports a room (Bermuda area sensors, ESPresense, room-assistant, or an `area`/`room` attribute) now places them in that room directly, without asking the LLM. Room names are matched ignoring case, spaces and dashes; an unmatched room is logged once as a warning.
 - `sensor.{room}_occupants` for each room: the number of people in it, with `people`, `pets`, `confidence` and `sources` attributes.
 - `source` attribute on `sensor.{name}_room` (`device_room`, `device_tracker` or `llm`).
@@ -16,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The dashboard card shows a strip of room tiles from the per-room occupants sensors, and opens a person's clues when you tap their row.
 
 ### Changed
+- **A quiet house is no longer reported as an LLM guess with a made-up reason.** With no mapped clue active, Roomer now says so: `source: prior`, `indicators: ["No active clues; time-of-day guess"]` and a confidence of at most 0.25 (it used to show `LLM: bedroom` at 0.13). If a person's last clue (or your `roomer.correct_room`) was in the last three hours, they stay where they were last seen instead (`source: sticky`), with a confidence that halves every hour. Sensor-driven results now have `source: sensor` instead of `llm`.
+- Entity types are now taken from the entity's `device_class` first (motion, occupancy and presence are motion; door, window, garage door and opening are door), then from its name, so mmWave presence sensors and sensors named after a model number are no longer typed "appliance". `tv` and `pc` only match as whole words.
+- `roomer.correct_room` finds the person or pet from Roomer's configuration (the sensor's registry entry) instead of from the entity ID, so `sensor.ben_room_3` teaches the habit to `Ben`, not `Ben 3`. When Roomer is not set up it still falls back to the old name derivation. A correction now also holds as the person's last-seen room.
+- `roomer.correct_room` validates `room` against your configured rooms plus `away` and `unknown` and raises an error for anything else. `confidence` is limited to 0.0-1.0.
 - **New look across the card and the standalone dashboard**: two lights, Daylight (light) and Lamplight (dark), with Bricolage Grotesque, Geist and Geist Mono. Occupied rooms are lit, and each person has a colour (Blue, Ember, Moss or Lilac) that goes with their name.
 - Confidence is now said in three plain words with dots: **Sure** (80% and up), **Likely** (50% and up) and **Guessing**. "Pretty sure" is now "Likely", and the percentage moved one tap down.
 - A person who is away shows as "Out since 6:12 PM" on the card, and as a line under the house on the dashboard.
@@ -23,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The dashboard no longer uses emoji for rooms and people.
 
 ### Fixed
+- Home Assistant's blocking-call warnings from the event logger, the habit predictor and the history tracker: they are now created in the executor at setup, and the startup, daily and service storage clean-ups run there too.
 - A device tracker whose state is a room name is no longer treated as "not home".
 
 ## [0.3.0] - 2026-10-21
