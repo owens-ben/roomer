@@ -60,8 +60,9 @@ These blueprints require:
 
 Feel free to modify these blueprints or create your own. Trigger on the room
 sensor's state (`from: away` for arrivals, `to: away` for departures, `to: null`
-for any room change). Roomer also defines `roomer_person_arrived`,
-`roomer_person_left` and `roomer_room_changed` events, but doesn't fire them yet.
+for any room change). Roomer also fires `roomer_person_arrived`,
+`roomer_person_left` and `roomer_room_changed` events; state triggers are more
+robust because the events don't fire at startup.
 
 If you use templates, declare the inputs they need in a top-level `variables:`
 block; `!input` values are not available to templates otherwise.

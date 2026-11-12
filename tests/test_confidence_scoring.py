@@ -5,6 +5,8 @@ These tests verify that confidence scoring properly weights different signals
 and combines them intelligently.
 """
 
+import pytest
+
 
 class TestConfidenceWeights:
     """Test default confidence weights."""
