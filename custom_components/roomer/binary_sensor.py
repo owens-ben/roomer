@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import ATTR_CONFIDENCE, DOMAIN
+from .const import ATTR_CONFIDENCE, ATTR_ROOM_AREA_ID, DOMAIN
 from .coordinator import LLMPresenceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ class LLMPresenceRoomBinarySensor(CoordinatorEntity[LLMPresenceCoordinator], Bin
         entity_data = self.coordinator.data.get(data_key, {}).get(self._entity_name)
 
         if entity_data:
-            return entity_data.room == self._room
+            return self._room in [entity_data.room, *(getattr(entity_data, "alternate_rooms", None) or [])]
         return None
 
     @property
@@ -111,8 +111,9 @@ class LLMPresenceRoomBinarySensor(CoordinatorEntity[LLMPresenceCoordinator], Bin
 
         if entity_data:
             return {
-                ATTR_CONFIDENCE: entity_data.confidence if entity_data.room == self._room else 0.0,
+                ATTR_CONFIDENCE: entity_data.confidence if self.is_on else 0.0,
                 "current_room": entity_data.room,
+                ATTR_ROOM_AREA_ID: self.coordinator.area_id_for_room(self._room),
                 "entity_type": self._entity_type,
             }
         return {}

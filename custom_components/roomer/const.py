@@ -18,6 +18,15 @@ CONF_ROOMS = "rooms"
 # Maps rooms to lists of entities that indicate activity in that room
 CONF_ROOM_ENTITIES = "room_entities"  # Dict[room_name, List[entity_id]]
 
+# Optional room -> Home Assistant area mapping, e.g. {"office": "area_id"}
+CONF_ROOM_AREAS = "room_areas"
+
+# What a mapped detection entity counts for: only people, only animals, or both
+DETECTS_PERSON = "person"
+DETECTS_ANIMAL = "animal"
+DETECTS_ANY = "any"
+DETECTS_OPTIONS = [DETECTS_ANY, DETECTS_PERSON, DETECTS_ANIMAL]
+
 # Entity type hints - what kind of signal does this entity provide?
 ENTITY_HINT_MOTION = "motion"  # Motion sensors
 ENTITY_HINT_MEDIA = "media"  # Media players (TV, speakers)
@@ -107,6 +116,10 @@ ATTR_CONFIDENCE = "confidence"
 ATTR_LAST_SEEN = "last_seen"
 ATTR_INDICATORS = "indicators"
 ATTR_RAW_RESPONSE = "raw_response"
+ATTR_SOURCE = "source"
+ATTR_CANDIDATE_ROOMS = "candidate_rooms"
+ATTR_LAST_CHANGED_REASON = "last_changed_reason"
+ATTR_ROOM_AREA_ID = "room_area_id"
 ATTR_VISION_IDENTIFIED = "vision_identified"
 ATTR_VISION_CONFIDENCE = "vision_confidence"
 
@@ -128,3 +141,33 @@ DEFAULT_NOTIFICATIONS_ENABLED = True
 # LLM request timeout
 CONF_TIMEOUT = "llm_timeout"
 DEFAULT_TIMEOUT = 30  # seconds
+
+# Where a room guess came from (the ``source`` attribute)
+SOURCE_LLM = "llm"
+SOURCE_SENSOR = "sensor"
+SOURCE_PRIOR = "prior"  # No active clue: a time-of-day guess
+SOURCE_STICKY = "sticky"  # No active clue: still where they were last seen
+SOURCE_MANUAL = "manual_correction"
+
+# A quiet house gives only a prior, so keep its confidence low
+PRIOR_MAX_CONFIDENCE = 0.25
+PRIOR_INDICATOR = "No active clues; time-of-day guess"
+
+# "Stay where last seen": a clue from the last STICKY_MAX_AGE seconds keeps the
+# person in that room. Sticky confidence starts at the clue's confidence, raised
+# to STICKY_BASE_MIN (a single sensor scores low on the combiner's scale but is
+# still the best evidence there is) and capped at STICKY_MAX_CONFIDENCE, then
+# halves every STICKY_HALF_LIFE seconds. Below STICKY_MIN_CONFIDENCE it is
+# dropped in favour of the prior. Clues scoring under STRONG_CLUE_MIN_CONFIDENCE
+# (an LLM guess with nothing behind it) are not remembered.
+STICKY_HALF_LIFE = 3600.0
+STICKY_MAX_AGE = 3 * 3600.0
+STICKY_BASE_MIN = 0.5
+STICKY_MAX_CONFIDENCE = 0.7
+STICKY_MIN_CONFIDENCE = 0.15
+STRONG_CLUE_MIN_CONFIDENCE = 0.15
+
+
+def presence_sensor_unique_id(entity_type: str, name: str) -> str:
+    """Unique id of the ``sensor.{name}_room`` entity of a person or pet."""
+    return f"{DOMAIN}_{entity_type}_{name.lower().replace(' ', '_')}_room"

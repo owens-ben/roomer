@@ -24,6 +24,7 @@ from .const import (
     CONF_PETS,
     CONF_POLL_INTERVAL,
     CONF_PROVIDER,
+    CONF_ROOM_AREAS,
     CONF_ROOM_ENTITIES,
     CONF_ROOMS,
     CONF_TIMEOUT,
@@ -36,6 +37,8 @@ from .const import (
     DEFAULT_PROVIDER,
     DEFAULT_TIMEOUT,
     DEFAULT_URL,
+    DETECTS_ANIMAL,
+    DETECTS_PERSON,
     DEVICE_TRACKER_AWAY_CONFIDENCE,
     DEVICE_TRACKER_HOME,
     DEVICE_TRACKER_NOT_HOME,
@@ -44,11 +47,24 @@ from .const import (
     ENTITY_HINT_COMPUTER,
     ENTITY_HINT_MEDIA,
     HABIT_SAVE_INTERVAL,
+    PRIOR_INDICATOR,
+    PRIOR_MAX_CONFIDENCE,
     ROOM_AWAY,
     ROOM_UNKNOWN,
+    SOURCE_MANUAL,
+    SOURCE_PRIOR,
+    SOURCE_SENSOR,
+    SOURCE_STICKY,
+    STICKY_BASE_MIN,
+    STICKY_HALF_LIFE,
+    STICKY_MAX_AGE,
+    STICKY_MAX_CONFIDENCE,
+    STICKY_MIN_CONFIDENCE,
+    STRONG_CLUE_MIN_CONFIDENCE,
     VALID_ROOMS,
 )
 from .device_presence import DeviceRoomLocator, seen_since_away
+from .entity_hints import guess_detects, normalize_room_entities
 from .event_logger import EventLogger
 from .habits import ConfidenceCombiner, HabitPredictor
 from .history import HistoryTracker
@@ -57,6 +73,11 @@ from .providers import get_provider
 from .providers.base import PresenceGuess
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _norm(text: str) -> str:
+    """Lowercase and drop everything but letters and digits, to compare room and area names."""
+    return "".join(c for c in text.lower() if c.isalnum())
 
 
 class DeviceTrackerHelper:
@@ -173,7 +194,10 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.persons = self._get_config(entry, CONF_PERSONS, [])
         self.pets = self._get_config(entry, CONF_PETS, [])
         self.rooms = self._get_config(entry, CONF_ROOMS, VALID_ROOMS)
-        self.room_entities: dict[str, list[dict]] = self._get_config(entry, CONF_ROOM_ENTITIES, {})
+        self.room_entities: dict[str, list[dict]] = normalize_room_entities(
+            self._get_config(entry, CONF_ROOM_ENTITIES, {})
+        )
+        self.room_areas: dict[str, str] = self._get_config(entry, CONF_ROOM_AREAS, {}) or {}
         self.person_devices: dict[str, list[str]] = self._get_config(entry, CONF_PERSON_DEVICES, {})
         self.confidence_weights = self._get_config(entry, CONF_CONFIDENCE_WEIGHTS, DEFAULT_CONFIDENCE_WEIGHTS)
         self.learning_enabled = self._get_config(entry, CONF_LEARNING_ENABLED, DEFAULT_LEARNING_ENABLED)
@@ -210,6 +234,12 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Track previous rooms for transition detection
         self._previous_rooms: dict[str, str] = {}
+
+        # Last strong clue per person/pet: (room, confidence, time.monotonic()).
+        # Drives "stay where last seen" when nothing is active.
+        self._last_clue: dict[str, tuple[str, float, float]] = {}
+        # Room last reported per person/pet and why it changed to it
+        self._reason_state: dict[str, tuple[str, str]] = {}
 
         super().__init__(
             hass,
@@ -252,6 +282,7 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     context,
                     active_indicators,
                 )
+                self._annotate_change_reason(person_name, guess)
                 results["persons"][person_name] = guess
 
             for pet in self.pets:
@@ -263,6 +294,7 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     active_indicators,
                     is_pet=True,
                 )
+                self._annotate_change_reason(pet_name, guess)
                 results["pets"][pet_name] = guess
 
             await self._async_maybe_save_habits()
@@ -303,6 +335,7 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     source="device_tracker",
                 )
                 _LOGGER.debug("%s is away (device tracker: %s)", name, trackers_checked)
+                self._last_clue.pop(name, None)
                 await self._log_presence_event(name, entity_type, guess, context)
                 await self._check_room_transition(name, guess.room, guess.confidence)
                 return guess
@@ -311,6 +344,7 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if device_readings:
             guess = self.device_room_locator.guess(device_readings)
             _LOGGER.debug("%s located in %s by device (%s)", name, guess.room, guess.raw_response)
+            self._remember_clue(name, guess.room, guess.confidence)
             if self.learning_enabled and guess.confidence >= 0.7:
                 self.habit_predictor.learn_from_event(
                     entity_name=name,
@@ -331,6 +365,17 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             entity_indicators = [i for i in active_indicators if i.get("hint_type") != ENTITY_HINT_COMPUTER]
         else:
             entity_indicators = self._get_person_indicators(name, active_indicators, context)
+        # A person detection counts only for people, an animal detection only for pets
+        entity_indicators = self._filter_by_detects(entity_indicators, is_pet)
+
+        # Nothing active: stay where they were last seen, if that was recent
+        if not entity_indicators:
+            sticky = self._sticky_guess(name)
+            if sticky is not None:
+                _LOGGER.debug("%s stays in %s (last seen, no active clues)", name, sticky.room)
+                await self._log_presence_event(name, entity_type, sticky, context)
+                await self._check_room_transition(name, sticky.room, sticky.confidence)
+                return sticky
 
         # Build context for LLM
         context_for_llm = {
@@ -349,7 +394,7 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         # Combine confidence from multiple sources
-        final_room, final_confidence, explanation = self.confidence_combiner.combine(
+        final_room, final_confidence, explanation, alternates = self.confidence_combiner.combine_with_alternates(
             llm_room=guess.room,
             llm_confidence=guess.confidence,
             habit_room=habit_hint.get("predicted_room"),
@@ -357,6 +402,7 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             sensor_indicators=entity_indicators,
             entity_name=name,
             room_entities=self.room_entities,
+            prefer_room=self._previous_rooms.get(name),
         )
 
         # Update guess with combined result
@@ -370,10 +416,19 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         guess.room = final_room
         guess.confidence = final_confidence
-        indicator_list = [f"{i['hint_type']}: {i['entity_id'].split('.')[-1]}" for i in entity_indicators[:5]]
-        if explanation:
-            indicator_list.append(explanation)
-        guess.indicators = indicator_list
+        guess.alternate_rooms = alternates
+        if entity_indicators:
+            indicator_list = [f"{i['hint_type']}: {i['entity_id'].split('.')[-1]}" for i in entity_indicators[:5]]
+            if explanation:
+                indicator_list.append(explanation)
+            guess.indicators = indicator_list
+            guess.source = SOURCE_SENSOR
+            self._remember_clue(name, final_room, final_confidence)
+        else:
+            # No mapped clue is active: this is only a prior (LLM and habits), not evidence
+            guess.indicators = [PRIOR_INDICATOR]
+            guess.confidence = min(final_confidence, PRIOR_MAX_CONFIDENCE)
+            guess.source = SOURCE_PRIOR
 
         # Learn from this event if confident
         if self.learning_enabled and final_confidence >= 0.7:
@@ -389,6 +444,93 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._check_room_transition(name, guess.room, guess.confidence)
 
         return guess
+
+    # ------------------------------------------------------------------
+    # Clues, "stay where last seen" and change reasons
+    # ------------------------------------------------------------------
+
+    def _remember_clue(self, name: str, room: str, confidence: float) -> None:
+        """Remember a strong clue so the person can stay in that room while it is quiet."""
+        if room in (ROOM_UNKNOWN, ROOM_AWAY) or confidence < STRONG_CLUE_MIN_CONFIDENCE:
+            return
+        self._last_clue[name] = (room, confidence, time.monotonic())
+
+    def register_correction(self, name: str, room: str, confidence: float = 1.0) -> None:
+        """Record a manual correction: they stay in that room until a clue says otherwise."""
+        if room in (ROOM_UNKNOWN, ROOM_AWAY):
+            self._last_clue.pop(name, None)
+        else:
+            self._last_clue[name] = (room, confidence, time.monotonic())
+        self._reason_state[name] = (room, SOURCE_MANUAL)
+
+    def _sticky_guess(self, name: str) -> PresenceGuess | None:
+        """Return "still where last seen" for a recent strong clue, or None."""
+        clue = self._last_clue.get(name)
+        if clue is None:
+            return None
+        room, confidence, seen_at = clue
+        age = time.monotonic() - seen_at
+        if age > STICKY_MAX_AGE:
+            return None
+        decayed = min(max(confidence, STICKY_BASE_MIN), STICKY_MAX_CONFIDENCE) * 0.5 ** (age / STICKY_HALF_LIFE)
+        if decayed < STICKY_MIN_CONFIDENCE:
+            return None
+        return PresenceGuess(
+            room=room,
+            confidence=round(decayed, 3),
+            raw_response="No active clues; staying where last seen",
+            indicators=[f"Last seen in {room.replace('_', ' ')} {self._format_age(age)} ago; no active clues"],
+            source=SOURCE_STICKY,
+        )
+
+    @staticmethod
+    def _format_age(seconds: float) -> str:
+        if seconds < 60:
+            return f"{int(seconds)}s"
+        if seconds < 3600:
+            return f"{int(seconds / 60)}m"
+        return f"{int(seconds / 3600)}h"
+
+    def _annotate_change_reason(self, name: str, guess: PresenceGuess) -> None:
+        """Set ``last_changed_reason``: why this person's room last changed."""
+        previous = self._reason_state.get(name)
+        if guess.room == ROOM_UNKNOWN and previous:
+            # Inconclusive, not a change: keep the last reported room and reason
+            guess.last_changed_reason = previous[1]
+            return
+        if previous is None or previous[0] != guess.room:
+            reason = guess.indicators[0] if guess.indicators else guess.source
+            self._reason_state[name] = (guess.room, reason)
+            previous = self._reason_state[name]
+        guess.last_changed_reason = previous[1]
+
+    def area_id_for_room(self, room: str | None) -> str | None:
+        """Return the Home Assistant area id a room maps to, if known.
+
+        A mapping set in the options wins; otherwise a room whose name matches
+        an area's name (ignoring case, spaces and punctuation) maps to it.
+        """
+        if not room or room in (ROOM_AWAY, ROOM_UNKNOWN):
+            return None
+        configured = self.room_areas.get(room)
+        if configured:
+            return configured
+        try:
+            from homeassistant.helpers import area_registry as ar
+
+            wanted = _norm(room)
+            for area in ar.async_get(self.hass).async_list_areas():
+                if _norm(area.name) == wanted or _norm(area.id) == wanted:
+                    return area.id
+        except Exception:  # noqa: BLE001 - registry unavailable (e.g. during tests)
+            return None
+        return None
+
+    @staticmethod
+    def _filter_by_detects(indicators: list[dict], is_pet: bool) -> list[dict]:
+        """Drop detections that don't apply: people ignore animals, pets ignore people."""
+        skip = DETECTS_PERSON if is_pet else DETECTS_ANIMAL
+        return [i for i in indicators if (i.get("detects") or "any") != skip]
 
     def _get_active_indicators(self, context: dict[str, Any]) -> list[dict]:
         """Get list of active indicators based on configured room entities.
@@ -412,6 +554,9 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             "hint_type": hint_type,
                             "room": room,
                             "state": state,
+                            "weight": entity_config.get("weight", 1.0),
+                            "detects": entity_config.get("detects") or guess_detects(entity_id),
+                            "shared": len(self._find_entity_rooms(entity_id)) > 1,
                         }
                     )
 
@@ -459,9 +604,8 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for device_id in owned_devices:
             state = self._get_entity_state(device_id, context)
             if self._is_entity_active(device_id, state, ENTITY_HINT_COMPUTER):
-                # Find which room this device is in
-                room = self._find_entity_room(device_id)
-                if room:
+                # Find which room(s) this device is mapped to
+                for room, weight in self._find_entity_rooms(device_id):
                     indicators.append(
                         {
                             "entity_id": device_id,
@@ -469,10 +613,20 @@ class LLMPresenceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             "room": room,
                             "state": state,
                             "owned_by": person_name,
+                            "weight": weight,
                         }
                     )
 
         return indicators
+
+    def _find_entity_rooms(self, entity_id: str) -> list[tuple[str, float]]:
+        """Return every (room, weight) an entity is mapped to."""
+        found = []
+        for room, entities in self.room_entities.items():
+            for entity_config in entities:
+                if entity_config.get("entity_id") == entity_id:
+                    found.append((room, entity_config.get("weight", 1.0)))
+        return found
 
     def _find_entity_room(self, entity_id: str) -> str | None:
         """Find which room an entity belongs to based on config."""

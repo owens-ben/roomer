@@ -77,17 +77,18 @@ class TestRefreshService:
 
 
 class TestCorrectRoomService:
-    """Test the correct_room service."""
+    """Test the correct_room service (see test_correct_room.py for name resolution and validation)."""
 
     @pytest.mark.asyncio
     async def test_correct_room_updates_state(self):
-        """Correct room should update entity state."""
+        """Correct room should learn and update entity state (no coordinator: legacy name)."""
         from custom_components.roomer.services import async_handle_correct_room
 
         mock_hass = MagicMock()
+        mock_hass.data = {}
         mock_hass.states.async_set = MagicMock()
+        mock_hass.async_add_executor_job = AsyncMock()
 
-        # Mock habit predictor
         mock_predictor = MagicMock()
         mock_predictor.learn_from_event = MagicMock()
 
@@ -100,15 +101,18 @@ class TestCorrectRoomService:
 
             await async_handle_correct_room(mock_hass, call)
 
-            # Should learn from correction
             mock_predictor.learn_from_event.assert_called_once()
+            assert mock_predictor.learn_from_event.call_args.kwargs["entity_name"] == "Ben"
 
     @pytest.mark.asyncio
-    async def test_correct_room_validates_room(self):
-        """Correct room should validate room name."""
+    async def test_correct_room_rejects_invalid_room(self):
+        """An unknown room raises a clear ServiceValidationError."""
+        from homeassistant.exceptions import ServiceValidationError
+
         from custom_components.roomer.services import async_handle_correct_room
 
         mock_hass = MagicMock()
+        mock_hass.data = {}
 
         call = MagicMock()
         call.data = {
@@ -116,8 +120,8 @@ class TestCorrectRoomService:
             "room": "invalid_room_xyz",
         }
 
-        # Should not raise, but may log warning
-        await async_handle_correct_room(mock_hass, call)
+        with pytest.raises(ServiceValidationError, match="invalid_room_xyz"):
+            await async_handle_correct_room(mock_hass, call)
 
 
 class TestGetHistoryService:

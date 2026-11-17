@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from functools import partial
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
@@ -21,6 +22,7 @@ from .const import (
     CONF_CONFIDENCE_WEIGHTS,
     CONF_MAX_FILE_SIZE_MB,
     CONF_RETENTION_DAYS,
+    CONF_ROOM_ENTITIES,
     CONF_URL,
     CONF_VISION_MODEL,
     DEFAULT_CONFIDENCE_WEIGHTS,
@@ -30,8 +32,10 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import LLMPresenceCoordinator
+from .entity_hints import normalize_room_entities
 from .event_logger import EventLogger
 from .habits import ConfidenceCombiner, HabitPredictor
+from .history import HistoryTracker
 from .services import (  # noqa: F401 - schemas re-exported for backwards compatibility
     CLEANUP_STORAGE_SCHEMA,
     IDENTIFY_PERSON_SCHEMA,
@@ -44,6 +48,9 @@ if TYPE_CHECKING:
     from homeassistant.helpers.typing import ConfigType
 
 _LOGGER = logging.getLogger(__name__)
+
+# Keep in step with LLMPresenceConfigFlow.VERSION
+CONFIG_ENTRY_VERSION = 3
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
@@ -65,8 +72,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     max_file_size_mb = entry.options.get(
         CONF_MAX_FILE_SIZE_MB, entry.data.get(CONF_MAX_FILE_SIZE_MB, DEFAULT_MAX_FILE_SIZE_MB)
     )
-    event_logger = EventLogger(retention_days=retention_days, max_file_size_mb=max_file_size_mb)
-    habit_predictor = HabitPredictor()
+    # These read and create files in __init__, so build them off the event loop
+    event_logger = await hass.async_add_executor_job(
+        partial(EventLogger, retention_days=retention_days, max_file_size_mb=max_file_size_mb)
+    )
+    habit_predictor = await hass.async_add_executor_job(HabitPredictor)
+    history_tracker = await hass.async_add_executor_job(HistoryTracker)
     confidence_weights = entry.options.get(
         CONF_CONFIDENCE_WEIGHTS, entry.data.get(CONF_CONFIDENCE_WEIGHTS, DEFAULT_CONFIDENCE_WEIGHTS)
     )
@@ -78,6 +89,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         event_logger=event_logger,
         habit_predictor=habit_predictor,
         confidence_combiner=confidence_combiner,
+        history_tracker=history_tracker,
     )
     await coordinator.async_config_entry_first_refresh()
 
@@ -87,7 +99,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Perform initial cleanup on startup
     _LOGGER.info("Performing initial storage cleanup on startup...")
-    cleanup_result = event_logger.cleanup()
+    cleanup_result = await hass.async_add_executor_job(event_logger.cleanup)
     _LOGGER.info(
         "Startup cleanup complete: deleted %d events, kept %d, final size: %.1f MB",
         cleanup_result.get("total_deleted", 0),
@@ -103,7 +115,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info("Running periodic storage cleanup...")
         logger = hass.data[DOMAIN].get("event_logger")
         if logger:
-            result = logger.cleanup()
+            result = await hass.async_add_executor_job(logger.cleanup)
             _LOGGER.info(
                 "Periodic cleanup complete: deleted %d events, kept %d, final size: %.1f MB",
                 result.get("total_deleted", 0),
@@ -154,6 +166,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await asyncio.to_thread(coordinator.save_state)
 
     entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_save_on_stop))
+
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate an older config entry.
+
+    Version 3 normalises ``room_entities``: every mapped entity gets a
+    ``weight`` (its share of the evidence for that room) and a ``detects``
+    (person, animal or any). Single-room mappings keep working unchanged.
+    """
+    if entry.version > CONFIG_ENTRY_VERSION:
+        # Created by a newer Roomer than this one
+        return False
+
+    if entry.version < CONFIG_ENTRY_VERSION:
+        data = dict(entry.data)
+        options = dict(entry.options)
+        if CONF_ROOM_ENTITIES in data:
+            data[CONF_ROOM_ENTITIES] = normalize_room_entities(data[CONF_ROOM_ENTITIES])
+        if CONF_ROOM_ENTITIES in options:
+            options[CONF_ROOM_ENTITIES] = normalize_room_entities(options[CONF_ROOM_ENTITIES])
+        hass.config_entries.async_update_entry(entry, data=data, options=options, version=CONFIG_ENTRY_VERSION)
+        _LOGGER.info("Migrated Roomer config entry to version %s", CONFIG_ENTRY_VERSION)
 
     return True
 

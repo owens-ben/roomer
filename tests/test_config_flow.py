@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.core import State
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -278,6 +279,7 @@ class TestConfigFlowRoomEntitiesStep:
 
         flow = LLMPresenceConfigFlow()
         flow.hass = MagicMock()
+        flow.hass.states.get.return_value = State("switch.any", "off")
         flow._data = {
             CONF_PROVIDER: "ollama",
             CONF_URL: "http://localhost:11434",
@@ -458,7 +460,9 @@ class TestOptionsFlow:
             "binary_sensor.office_motion",
             "switch.office_pc",
         ]
-        assert options[CONF_ROOM_ENTITIES]["bedroom"] == [{"entity_id": "light.bedroom", "hint_type": "light"}]
+        assert options[CONF_ROOM_ENTITIES]["bedroom"] == [
+            {"entity_id": "light.bedroom", "hint_type": "light", "weight": 1.0, "detects": "any"}
+        ]
         assert "garage" not in options[CONF_ROOM_ENTITIES]
         assert options[CONF_PERSON_DEVICES] == {
             "Alice": ["device_tracker.alice_phone"],
@@ -535,7 +539,7 @@ class TestOptionsFlow:
         )
 
         assert options_entry.options[CONF_ROOM_ENTITIES] == {
-            "bedroom": [{"entity_id": "light.bedroom", "hint_type": "light"}],
+            "bedroom": [{"entity_id": "light.bedroom", "hint_type": "light", "weight": 1.0, "detects": "any"}],
         }
 
 

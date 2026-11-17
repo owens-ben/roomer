@@ -266,6 +266,10 @@ Note: This is a learned pattern - actual sensor data should override if contradi
         self.save_learned_patterns()
 
 
+# A room within this share of the best score counts as raised as well
+ALTERNATE_SCORE_RATIO = 0.8
+
+
 class ConfidenceCombiner:
     """Combine confidence scores from multiple sources using configured weights."""
 
@@ -277,7 +281,15 @@ class ConfidenceCombiner:
         """Update confidence weights."""
         self.weights.update(new_weights)
 
-    def combine(
+    def combine(self, *args: Any, **kwargs: Any) -> tuple[str, float, str]:
+        """Combine multiple signals into the final (room, confidence, explanation).
+
+        Takes the arguments of :meth:`combine_with_alternates`.
+        """
+        room, confidence, explanation, _alternates = self.combine_with_alternates(*args, **kwargs)
+        return room, confidence, explanation
+
+    def combine_with_alternates(
         self,
         llm_room: str,
         llm_confidence: float,
@@ -287,7 +299,8 @@ class ConfidenceCombiner:
         entity_name: str | None = None,
         room_entities: dict[str, list[dict]] | None = None,
         active_entities: dict[str, str] | None = None,
-    ) -> tuple[str, float, str]:
+        prefer_room: str | None = None,
+    ) -> tuple[str, float, str, list[str]]:
         """Combine multiple signals into final prediction.
 
         Args:
@@ -299,12 +312,16 @@ class ConfidenceCombiner:
             entity_name: Name of person (for person-specific device logic)
             room_entities: Configured room-to-entity mappings
             active_entities: Currently active entities {entity_id: state}
+            prefer_room: Wins a tie, normally the room they were in last time
 
         Returns:
-            Tuple of (room, confidence, explanation)
+            Tuple of (room, confidence, explanation, alternates). Alternates are
+            other rooms that an entity mapped to several rooms (one camera seeing
+            two rooms) raises just as much as the best room.
         """
         candidates: dict[str, float] = {}
         explanations: list[str] = []
+        shared_in: dict[str, set[str]] = {}  # room -> shared (multi-room) entities active there
 
         # Process sensor indicators
         if sensor_indicators:
@@ -329,7 +346,12 @@ class ConfidenceCombiner:
                     else:
                         weight = 0.1
 
+                # An entity covering several rooms gives each only its share
+                weight *= indicator.get("weight", 1.0)
+
                 candidates[room] = candidates.get(room, 0) + weight
+                if indicator.get("shared"):
+                    shared_in.setdefault(room, set()).add(entity_id)
 
                 # Build explanation
                 if weight >= 0.5:
@@ -349,11 +371,12 @@ class ConfidenceCombiner:
             candidates[habit_room] = candidates.get(habit_room, 0) + weighted
 
         if not candidates:
-            return "unknown", 0.0, "No signals available"
+            return "unknown", 0.0, "No signals available", []
 
-        # Find the room with highest combined score
-        best_room = max(candidates, key=candidates.get)
-        best_score = candidates[best_room]
+        # Find the room with highest combined score; a tie keeps the preferred room
+        best_score = max(candidates.values())
+        tied = [r for r, sc in candidates.items() if sc >= best_score - 1e-9]
+        best_room = prefer_room if prefer_room in tied else tied[0]
 
         # Normalize confidence (cap at 1.0)
         # Use sum of top weights as max possible
@@ -367,4 +390,13 @@ class ConfidenceCombiner:
 
         explanation = " | ".join(explanations[:4])  # Limit explanation length
 
-        return best_room, final_confidence, explanation
+        # Other rooms raised just as much by an entity shared with the best room
+        alternates = [
+            r
+            for r, sc in candidates.items()
+            if r != best_room
+            and sc >= best_score * ALTERNATE_SCORE_RATIO
+            and shared_in.get(r, set()) & shared_in.get(best_room, set())
+        ]
+
+        return best_room, final_confidence, explanation, alternates

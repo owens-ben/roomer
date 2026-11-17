@@ -130,3 +130,16 @@ Add a `for:` of 20 to 60 seconds so brief flips don't trigger anything. See [Aut
 
 **6. Pick a capable, fast model.**
 A model that answers in a second or two keeps results fresh. If responses take longer than your poll interval, raise the poll interval. See [Troubleshooting](troubleshooting.md).
+
+## When nothing is active
+
+If no mapped entity is active for a person, Roomer does not pretend to know.
+
+- **Still where they were last seen.** If a clue (a sensor, or a device that reports a room, or your
+  `roomer.correct_room`) put them in a room in the last three hours, they stay there
+  (`source: sticky`). The confidence starts at 50% to 70% and halves every hour. Below 15% it is dropped.
+- **Otherwise a prior.** With no recent clue the room is only the AI's and your learned habits' time-of-day guess
+  (`source: prior`). Its `indicators` are `["No active clues; time-of-day guess"]` and its confidence never
+  goes above 0.25. Don't automate on it.
+
+An active clue always beats both, and a person who goes `away` is forgotten, so they never come back by "sticking".

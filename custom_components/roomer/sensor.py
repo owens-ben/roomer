@@ -12,7 +12,19 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import ATTR_CONFIDENCE, ATTR_INDICATORS, ATTR_RAW_RESPONSE, DOMAIN, ROOM_AWAY, ROOM_UNKNOWN
+from .const import (
+    ATTR_CANDIDATE_ROOMS,
+    ATTR_CONFIDENCE,
+    ATTR_INDICATORS,
+    ATTR_LAST_CHANGED_REASON,
+    ATTR_RAW_RESPONSE,
+    ATTR_ROOM_AREA_ID,
+    ATTR_SOURCE,
+    DOMAIN,
+    ROOM_AWAY,
+    ROOM_UNKNOWN,
+    presence_sensor_unique_id,
+)
 from .coordinator import LLMPresenceCoordinator
 from .providers.base import PresenceGuess
 
@@ -77,7 +89,7 @@ class LLMPresenceSensor(CoordinatorEntity[LLMPresenceCoordinator], SensorEntity)
         self._entity_type = entity_type
 
         # Set unique ID and name
-        self._attr_unique_id = f"{DOMAIN}_{entity_type}_{entity_name.lower().replace(' ', '_')}_room"
+        self._attr_unique_id = presence_sensor_unique_id(entity_type, entity_name)
         self._attr_name = f"{entity_name} Room"
 
         # Set icon based on type
@@ -106,19 +118,30 @@ class LLMPresenceSensor(CoordinatorEntity[LLMPresenceCoordinator], SensorEntity)
         entity_data = self.coordinator.data.get(data_key, {}).get(self._entity_name)
 
         if entity_data:
-            return {
+            attrs = {
                 ATTR_CONFIDENCE: entity_data.confidence,
                 ATTR_RAW_RESPONSE: entity_data.raw_response,
                 ATTR_INDICATORS: entity_data.indicators,
-                "source": entity_data.source,
+                ATTR_SOURCE: entity_data.source,
+                ATTR_LAST_CHANGED_REASON: getattr(entity_data, "last_changed_reason", ""),
+                ATTR_ROOM_AREA_ID: self.coordinator.area_id_for_room(entity_data.room),
                 "entity_type": self._entity_type,
             }
+            alternates = getattr(entity_data, "alternate_rooms", [])
+            if alternates:
+                attrs[ATTR_CANDIDATE_ROOMS] = [entity_data.room, *alternates]
+            return attrs
         return {}
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         self.async_write_ha_state()
+
+
+def _rooms_of(guess: PresenceGuess) -> list[str]:
+    """Rooms a guess raises: its room, plus rooms a shared entity (one camera, two rooms) raises equally."""
+    return [guess.room, *(getattr(guess, "alternate_rooms", None) or [])]
 
 
 class RoomOccupantsSensor(CoordinatorEntity[LLMPresenceCoordinator], SensorEntity):
@@ -144,7 +167,7 @@ class RoomOccupantsSensor(CoordinatorEntity[LLMPresenceCoordinator], SensorEntit
     def _in_room(self, data_key: str) -> dict[str, PresenceGuess]:
         """Return the persons or pets currently placed in this room."""
         entities = (self.coordinator.data or {}).get(data_key, {})
-        return {name: guess for name, guess in entities.items() if guess.room == self._room}
+        return {name: guess for name, guess in entities.items() if self._room in _rooms_of(guess)}
 
     @property
     def native_value(self) -> int | None:
@@ -167,6 +190,7 @@ class RoomOccupantsSensor(CoordinatorEntity[LLMPresenceCoordinator], SensorEntit
             "pets": list(pets),
             ATTR_CONFIDENCE: {name: guess.confidence for name, guess in everyone.items()},
             "sources": {name: guess.source for name, guess in everyone.items()},
+            ATTR_ROOM_AREA_ID: self.coordinator.area_id_for_room(self._room),
         }
 
 

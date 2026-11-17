@@ -49,7 +49,7 @@ For each person and pet you set up:
 |---|---|---|
 | `sensor.<name>_room` | `sensor.alice_room` → `office` | Dashboards, templates, "where is everyone?" |
 | `binary_sensor.<name>_in_<room>` | `binary_sensor.alice_in_office` → `on` | The simplest automation trigger there is |
-| Attributes | `confidence`, `indicators` (the clues it used) | Acting only when Roomer is fairly sure, and seeing *why* it guessed |
+| Attributes | `confidence` (0-1), `indicators` (the clues, in words), `source`, `last_changed_reason`, `room_area_id` | Acting only when Roomer is fairly sure, seeing *why* it guessed, and mapping rooms to areas in a UI. See [Entities](https://owens-ben.github.io/roomer/using/entities/) |
 
 You also get:
 - **Events:** `roomer_room_changed`, `roomer_person_arrived`, `roomer_person_left`

@@ -122,11 +122,11 @@ class TestCoordinatorPersonDevices:
             def mock_get_state(entity_id, context):
                 return "on" if entity_id == "switch.alice_pc" else "off"
 
-            def mock_find_room(entity_id):
-                return "office" if "pc" in entity_id else None
+            def mock_find_rooms(entity_id):
+                return [("office", 1.0)] if "pc" in entity_id else []
 
             coordinator._get_entity_state = mock_get_state
-            coordinator._find_entity_room = mock_find_room
+            coordinator._find_entity_rooms = mock_find_rooms
 
             all_indicators = []
             context = {}
