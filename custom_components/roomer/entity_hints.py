@@ -120,6 +120,10 @@ def normalize_room_entities(raw: Any) -> dict[str, list[dict[str, Any]]]:
                 continue
             entry = {k: v for k, v in item.items() if k != "rooms"}
             entry.setdefault("hint_type", guess_entity_hint(entry["entity_id"]))
+            # An old entry that never recorded what it detects: read it from the name,
+            # so a camera's "animal" sensor does not count as a person after migration
+            if entry.get("detects") not in (DETECTS_PERSON, DETECTS_ANIMAL, DETECTS_ANY):
+                entry["detects"] = guess_detects(entry["entity_id"])
             extra_rooms = item.get("rooms")
             if isinstance(extra_rooms, list) and extra_rooms:
                 all_rooms = list(dict.fromkeys([room, *extra_rooms]))
@@ -133,7 +137,5 @@ def normalize_room_entities(raw: Any) -> dict[str, list[dict[str, Any]]]:
             except (TypeError, ValueError):
                 weight = 1.0
             entry["weight"] = weight
-            if entry.get("detects") not in (DETECTS_PERSON, DETECTS_ANIMAL, DETECTS_ANY):
-                entry["detects"] = DETECTS_ANY
             add(room, entry)
     return result

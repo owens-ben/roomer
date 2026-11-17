@@ -206,6 +206,142 @@ class TestMigration:
         assert await async_migrate_entry(hass, future) is False
 
 
+LIVE_V2_DATA = {
+    "learning_enabled": True,
+    "model": "qwen2.5:3b",
+    "person_devices": {},
+    "persons": [{"name": "Ben"}, {"name": "Riley"}],
+    "pets": [{"name": "Fido"}],
+    "poll_interval": 30.0,
+    "provider": "ollama",
+    "room_entities": {
+        "bathroom": [{"entity_id": "light.bathroom", "hint_type": "light"}],
+        "kitchen": [
+            {"entity_id": "binary_sensor.third_reality_inc_3rms16bz", "hint_type": "appliance"},
+            {"entity_id": "binary_sensor.e1_zoom_animal", "hint_type": "camera"},
+            {"entity_id": "light.kitchen", "hint_type": "light"},
+        ],
+        "living_room": [
+            {"entity_id": "binary_sensor.presence_living_room", "hint_type": "appliance"},
+            {"entity_id": "binary_sensor.motionaware_area", "hint_type": "motion"},
+        ],
+        "office": [{"entity_id": "switch.pc_switch_socket_1", "hint_type": "computer"}],
+    },
+    "rooms": ["office", "living_room", "bedroom", "kitchen", "bathroom", "entry"],
+    "url": "http://192.168.0.12:11434",
+}
+LIVE_V2_OPTIONS = {
+    "person_devices": {
+        "Ben": ["device_tracker.iphone_2", "switch.pc_switch_socket_1"],
+        "Riley": ["device_tracker.device_tracker_iphone_riley"],
+    }
+}
+
+
+class TestLiveEntryShape:
+    """The shape of the real version 2 entry (options hold only person_devices)."""
+
+    async def test_live_v2_entry_migrates_without_losing_anything(self, hass):
+        live = MockConfigEntry(domain=DOMAIN, version=2, data=LIVE_V2_DATA, options=LIVE_V2_OPTIONS)
+        live.add_to_hass(hass)
+
+        assert await async_migrate_entry(hass, live) is True
+
+        assert live.version == 3
+        assert live.options == LIVE_V2_OPTIONS  # options without room_entities are untouched
+        for key in ("persons", "pets", "rooms", "url", "model", "provider", "poll_interval"):
+            assert live.data[key] == LIVE_V2_DATA[key]
+        migrated = live.data[CONF_ROOM_ENTITIES]
+        assert set(migrated) == set(LIVE_V2_DATA["room_entities"])
+        for room, entries in LIVE_V2_DATA["room_entities"].items():
+            assert [e["entity_id"] for e in migrated[room]] == [e["entity_id"] for e in entries]
+            assert [e["hint_type"] for e in migrated[room]] == [e["hint_type"] for e in entries]
+            assert all(e["weight"] == 1.0 for e in migrated[room])
+        camera = next(e for e in migrated["kitchen"] if e["entity_id"] == "binary_sensor.e1_zoom_animal")
+        assert camera["detects"] == "animal"
+
+    async def test_migration_is_idempotent(self, hass):
+        live = MockConfigEntry(domain=DOMAIN, version=2, data=LIVE_V2_DATA, options=LIVE_V2_OPTIONS)
+        live.add_to_hass(hass)
+        await async_migrate_entry(hass, live)
+        first = dict(live.data)
+        hass.config_entries.async_update_entry(live, version=2)
+        await async_migrate_entry(hass, live)
+        assert live.data == first
+
+
+class TestPeoplePetsStep:
+    async def test_menu_offers_it(self, hass, entry):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        assert "people_pets" in result["menu_options"]
+
+    async def test_renaming_a_pet_moves_its_devices(self, hass, enable_custom_integrations):
+        data = {**LIVE_V2_DATA}
+        opts = {"person_devices": {**LIVE_V2_OPTIONS["person_devices"], "Fido": ["device_tracker.tag"]}}
+        e = MockConfigEntry(domain=DOMAIN, version=3, data=data, options=opts)
+        e.add_to_hass(hass)
+
+        result = await _submit(hass, e, "people_pets", {"persons": "Ben, Riley", "pets": "Eliza"})
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert e.options["pets"] == [{"name": "Eliza"}]
+        assert e.options["persons"] == [{"name": "Ben"}, {"name": "Riley"}]
+        assert e.options["person_devices"]["Eliza"] == ["device_tracker.tag"]
+        assert "Fido" not in e.options["person_devices"]
+        assert e.options["person_devices"]["Riley"] == ["device_tracker.device_tracker_iphone_riley"]
+
+    async def test_adding_a_pet_keeps_the_rest(self, hass, enable_custom_integrations):
+        e = MockConfigEntry(domain=DOMAIN, version=3, data=LIVE_V2_DATA, options=LIVE_V2_OPTIONS)
+        e.add_to_hass(hass)
+
+        await _submit(hass, e, "people_pets", {"persons": "Ben, Riley", "pets": "Fido, Eliza"})
+
+        assert [p["name"] for p in e.options["pets"]] == ["Fido", "Eliza"]
+
+    async def test_empty_and_duplicate_names_are_rejected(self, hass, enable_custom_integrations):
+        e = MockConfigEntry(domain=DOMAIN, version=3, data=LIVE_V2_DATA, options=LIVE_V2_OPTIONS)
+        e.add_to_hass(hass)
+
+        result = await _submit(hass, e, "people_pets", {"persons": "", "pets": ""})
+        assert result["errors"] == {"base": "at_least_one_entity"}
+
+        result = await _submit(hass, e, "people_pets", {"persons": "Ben", "pets": "ben"})
+        assert result["errors"] == {"base": "duplicate_name"}
+
+
+class TestRetypingHint:
+    async def test_fallback_appliance_hint_is_reguessed_from_device_class(self, hass, enable_custom_integrations):
+        hass.states.async_set("binary_sensor.presence_living_room", "off", {"device_class": "occupancy"})
+        e = MockConfigEntry(domain=DOMAIN, version=3, data=LIVE_V2_DATA, options={})
+        e.add_to_hass(hass)
+
+        await _submit(
+            hass, e, "multi_room", {"entity_id": "binary_sensor.presence_living_room", "rooms": ["living_room"]}
+        )
+
+        entry_ = next(
+            x
+            for x in e.options[CONF_ROOM_ENTITIES]["living_room"]
+            if x["entity_id"] == "binary_sensor.presence_living_room"
+        )
+        assert entry_["hint_type"] == "motion"
+
+    async def test_explicit_hint_wins(self, hass, enable_custom_integrations):
+        hass.states.async_set("binary_sensor.third_reality_inc_3rms16bz", "off", {})
+        e = MockConfigEntry(domain=DOMAIN, version=3, data=LIVE_V2_DATA, options={})
+        e.add_to_hass(hass)
+
+        await _submit(
+            hass,
+            e,
+            "multi_room",
+            {"entity_id": "binary_sensor.third_reality_inc_3rms16bz", "rooms": ["kitchen"], "hint_type": "motion"},
+        )
+
+        k = next(x for x in e.options[CONF_ROOM_ENTITIES]["kitchen"] if "third_reality" in x["entity_id"])
+        assert k["hint_type"] == "motion"
+
+
 class TestFileIoOffTheEventLoop:
     """Setup builds the file-backed components in the executor (HA's blocking-call warnings)."""
 

@@ -67,7 +67,8 @@
           "multi_room": "Entity Covering Several Rooms",
           "room_areas": "Room Areas",
           "person_devices": "Person Device Ownership",
-          "confidence_weights": "Confidence Weights"
+          "confidence_weights": "Confidence Weights",
+          "people_pets": "People and Pets"
         }
       },
       "general": {
@@ -97,10 +98,12 @@
           "entity_id": "Entity",
           "rooms": "Rooms it covers",
           "detects": "What it detects",
-          "split_weight": "Split its weight between the rooms"
+          "split_weight": "Split its weight between the rooms",
+          "hint_type": "Kind of signal"
         },
         "data_description": {
-          "split_weight": "Off: each room gets the full evidence. On: the rooms share it, so each counts for less."
+          "split_weight": "Off: each room gets the full evidence. On: the rooms share it, so each counts for less.",
+          "hint_type": "Auto keeps the current kind, or re-guesses it from the entity's device class when it was only a fallback guess."
         }
       },
       "room_areas": {
@@ -134,10 +137,20 @@
           "weight_llm_reasoning": "LLM reasoning",
           "weight_habit": "Learned patterns"
         }
+      },
+      "people_pets": {
+        "title": "People and Pets",
+        "description": "Comma-separated names. Change a name in place to rename someone (their devices follow). A renamed pet gets a new room sensor named after it.",
+        "data": {
+          "persons": "People",
+          "pets": "Pets"
+        }
       }
     },
     "error": {
-      "entity_not_found": "That entity doesn't exist in Home Assistant."
+      "entity_not_found": "That entity doesn't exist in Home Assistant.",
+      "at_least_one_entity": "Add at least one person or pet.",
+      "duplicate_name": "Each person or pet needs a different name."
     }
   },
   "selector": {

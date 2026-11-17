@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **People and Pets** options step: rename, add or remove people and pets after setup. A renamed person's or pet's device mapping follows the new name; a renamed pet gets a new `sensor.<name>_room`.
+- **Kind of signal** in the Entity Covering Several Rooms step, to retype an already-mapped entity (for example from `appliance` to `motion`); `auto` re-guesses an old fallback `appliance` hint from the entity's device class.
 - **One entity, several rooms.** A mapped entity can now cover more than one room, for example a camera that sees both the kitchen and the living room. Map it with the new **Entity Covering Several Rooms** options step: every room you pick is raised by its detections, optionally splitting the entity's weight between them (`weight`). When it is the only evidence the person stays in the room they were in, the other room is listed in the new `candidate_rooms` attribute, and the occupants sensors and room binary sensors count them in both. Stored mappings gain `weight` and `detects`; config entries are migrated to version 3 and existing single-room mappings behave as before.
 - Person detections count only toward people and animal detections only toward pets (`detects`: `person`, `animal` or `any`, worked out from the entity name unless you set it).
 - **Room Areas** options step and the `room_area_id` attribute on the room sensors, the occupants sensors and the room binary sensors, so a UI can map rooms to Home Assistant areas. Rooms with no mapping are matched to an area of the same name.

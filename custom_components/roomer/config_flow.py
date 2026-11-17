@@ -91,6 +91,22 @@ def _entry_for(hass, entity_id: str, existing: dict[str, Any] | None = None) -> 
     return entry
 
 
+# Hint types offered when mapping an entity by hand
+HINT_TYPE_OPTIONS = ["motion", "camera", "media", "light", "computer", "door", "presence", "climate", "appliance"]
+
+
+def _parse_names(text: str) -> list[str]:
+    """Split a comma-separated list of names, dropping blanks."""
+    return [n.strip() for n in (text or "").split(",") if n.strip()]
+
+
+def _renames(old: list[str], new: list[str]) -> list[tuple[str, str]]:
+    """(old, new) pairs for names that changed in place; only when the list length is unchanged."""
+    if len(old) != len(new):
+        return []
+    return [(o, n) for o, n in zip(old, new, strict=True) if o != n and n not in old]
+
+
 class LLMPresenceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Roomer."""
 
@@ -359,6 +375,7 @@ class LLMPresenceOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             menu_options=[
                 "general",
+                "people_pets",
                 "room_entities",
                 "multi_room",
                 "room_areas",
@@ -406,6 +423,50 @@ class LLMPresenceOptionsFlow(config_entries.OptionsFlow):
                     ): bool,
                 }
             ),
+        )
+
+    async def async_step_people_pets(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Rename, add or remove people and pets.
+
+        When the number of names in a list is unchanged, a different name at the
+        same position is a rename: the person's or pet's device mapping moves to
+        the new name. Room sensors are keyed by name, so a renamed pet gets a new
+        ``sensor.<name>_room`` entity.
+        """
+        errors: dict[str, str] = {}
+        old_persons = [p.get("name", "") for p in self._get(CONF_PERSONS, [])]
+        old_pets = [p.get("name", "") for p in self._get(CONF_PETS, [])]
+
+        if user_input is not None:
+            persons = _parse_names(user_input.get(CONF_PERSONS, ""))
+            pets = _parse_names(user_input.get(CONF_PETS, ""))
+            everyone = [n.lower() for n in persons + pets]
+            if not persons and not pets:
+                errors["base"] = "at_least_one_entity"
+            elif len(set(everyone)) != len(everyone):
+                errors["base"] = "duplicate_name"
+            else:
+                devices = dict(self._get(CONF_PERSON_DEVICES, {}) or {})
+                for old, new in (*_renames(old_persons, persons), *_renames(old_pets, pets)):
+                    if old in devices and new not in devices:
+                        devices[new] = devices.pop(old)
+                return self._save(
+                    {
+                        CONF_PERSONS: [{"name": n} for n in persons],
+                        CONF_PETS: [{"name": n} for n in pets],
+                        CONF_PERSON_DEVICES: devices,
+                    }
+                )
+
+        return self.async_show_form(
+            step_id="people_pets",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_PERSONS, default=", ".join(old_persons)): str,
+                    vol.Optional(CONF_PETS, default=", ".join(old_pets)): str,
+                }
+            ),
+            errors=errors,
         )
 
     async def async_step_room_entities(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -493,6 +554,15 @@ class LLMPresenceOptionsFlow(config_entries.OptionsFlow):
 
                 if chosen:
                     base = _entry_for(self.hass, entity_id, {"hint_type": previous["hint_type"]} if previous else None)
+                    hint = user_input.get("hint_type", "auto")
+                    if hint != "auto":
+                        base["hint_type"] = hint
+                    elif previous and previous["hint_type"] == "appliance":
+                        # "appliance" is only the fallback guess: retry it with the entity's device_class
+                        state = self.hass.states.get(entity_id)
+                        base["hint_type"] = _guess_entity_hint(
+                            entity_id, state.attributes.get("device_class") if state else None
+                        )
                     detects = user_input.get("detects", "auto")
                     if detects != "auto":
                         base["detects"] = detects
@@ -521,6 +591,12 @@ class LLMPresenceOptionsFlow(config_entries.OptionsFlow):
                         selector.SelectSelectorConfig(
                             options=["auto", *DETECTS_OPTIONS],
                             translation_key="detects",
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional("hint_type", default="auto"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=["auto", *HINT_TYPE_OPTIONS],
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
