@@ -93,3 +93,11 @@ custom_components/llm_presence/models/
 
 site/
 .claude/worktrees/
+
+# iOS app (ios/)
+ios/*.xcodeproj/
+ios/build/
+ios/DerivedData/
+ios/Config/Signing.local.xcconfig
+xcuserdata/
+*.xcuserstate
